@@ -1,0 +1,62 @@
+@import "tailwindcss";
+
+@theme {
+  /* Paleta Dourada Oficial Albanos derivada diretamente da logo (#c1a01b) */
+  --color-albanos-gold: #c1a01b;
+  --color-albanos-gold-light: #d6b527;
+  --color-albanos-gold-lighter: #e5cb58;
+  --color-albanos-gold-dark: #9e8214;
+  --color-albanos-gold-darker: #735e0c;
+  --color-albanos-gold-deep: #473906;
+
+  /* Harmonização da escala amber do Tailwind para a tonalidade exata da Cervejaria Albanos */
+  --color-amber-50: #fdfcf5;
+  --color-amber-100: #faf6e4;
+  --color-amber-200: #f3e8b8;
+  --color-amber-300: #e5cb58;
+  --color-amber-400: #d6b527;
+  --color-amber-500: #c1a01b;
+  --color-amber-600: #a78913;
+  --color-amber-700: #886f0e;
+  --color-amber-800: #68540a;
+  --color-amber-900: #493b07;
+  --color-amber-950: #2b2203;
+
+  --font-heading: "Raleway", sans-serif;
+  --font-title: "Raleway", sans-serif;
+}
+
+.font-heading,
+.font-title {
+  font-family: 'Raleway', sans-serif;
+}
+
+:root {
+  --albanos-gold: #c1a01b;
+  --albanos-gold-glow: rgba(193, 160, 27, 0.35);
+}
+
+html, body {
+  overflow-x: hidden;
+  max-width: 100vw;
+  width: 100%;
+  -webkit-tap-highlight-color: transparent;
+}
+
+input[type="date"],
+input[type="time"] {
+  color-scheme: dark;
+}
+
+input[type="date"]::-webkit-calendar-picker-indicator,
+input[type="time"]::-webkit-calendar-picker-indicator {
+  cursor: pointer;
+  filter: brightness(0) saturate(100%) invert(75%) sepia(61%) saturate(687%) hue-rotate(3deg) brightness(92%) contrast(88%);
+  opacity: 0.9;
+  transition: opacity 0.2s ease;
+}
+
+input[type="date"]::-webkit-calendar-picker-indicator:hover,
+input[type="time"]::-webkit-calendar-picker-indicator:hover {
+  opacity: 1;
+}

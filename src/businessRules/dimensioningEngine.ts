@@ -31,34 +31,23 @@ export interface DimensionamentoResultado {
 
 /**
  * Calcula o fator de consumo (Litros/adulto) determinístico com base na duração e presença de outra bebida alcoólica.
+ * Aceita estritamente números inteiros de 1 a 12 horas.
  */
 export function calcularFatorConsumo(
   duracaoHoras: number,
   outrasBebidas: OutrasBebidas
 ): number {
-  if (duracaoHoras <= 0 || duracaoHoras > 12) {
-    throw new Error('Duração inválida. A duração deve estar entre 0.1 e 12 horas.');
+  if (!Number.isInteger(duracaoHoras) || duracaoHoras < 1 || duracaoHoras > 12) {
+    throw new Error('Duração inválida. A duração deve ser um número inteiro entre 1 e 12 horas.');
   }
 
   const comOutra = outrasBebidas === 'SIM';
-
-  // Se a duração for inteira e constar na tabela canônica
-  const horaInteira = Math.round(duracaoHoras);
-  if (Math.abs(duracaoHoras - horaInteira) < 0.001 && TABELA_CONSUMO_INTEIRO[horaInteira]) {
-    return comOutra
-      ? TABELA_CONSUMO_INTEIRO[horaInteira].comOutraAlcoolica
-      : TABELA_CONSUMO_INTEIRO[horaInteira].somenteChope;
+  const entrada = TABELA_CONSUMO_INTEIRO[duracaoHoras];
+  if (!entrada) {
+    throw new Error(`Duração ${duracaoHoras}h não encontrada na tabela canônica.`);
   }
 
-  // Duração até 4h (inclusive fracionada): base constante
-  if (duracaoHoras <= 4) {
-    return comOutra ? 1.2 : 1.5;
-  }
-
-  // Duração fracionada > 4h e <= 12h: fallback linear de +10% por hora acima de 4h
-  const base = comOutra ? 1.2 : 1.5;
-  const fator = base * (1 + 0.1 * (duracaoHoras - 4));
-  return Number(fator.toFixed(4));
+  return comOutra ? entrada.comOutraAlcoolica : entrada.somenteChope;
 }
 
 /**
@@ -74,8 +63,8 @@ export function calcularDimensionamento(
   if (!qtdAdultos || qtdAdultos <= 0) {
     throw new Error('Quantidade de adultos deve ser maior que zero.');
   }
-  if (!duracaoHoras || duracaoHoras <= 0 || duracaoHoras > 12) {
-    throw new Error('Duração deve ser maior que 0 e no máximo 12 horas.');
+  if (!duracaoHoras || !Number.isInteger(duracaoHoras) || duracaoHoras < 1 || duracaoHoras > 12) {
+    throw new Error('Duração deve ser um número inteiro de 1 a 12 horas.');
   }
   if (outrasBebidas !== 'SIM' && outrasBebidas !== 'NAO') {
     throw new Error('Presença de outras bebidas alcoólicas deve ser informada (SIM ou NAO).');

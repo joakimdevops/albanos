@@ -27,13 +27,6 @@ export const Step1Event: React.FC<Step1EventProps> = ({
 
   const hojeStr = new Date().toISOString().split('T')[0];
 
-  // Garante 4h como duração padrão selecionada
-  useEffect(() => {
-    if (!state.duracao_horas) {
-      onUpdateField('duracao_horas', 4);
-    }
-  }, [state.duracao_horas, onUpdateField]);
-
   const dispararErro = (mensagem: string, idCampo: string, idElementoFoco?: string) => {
     setErro(mensagem);
     setCampoComErro(idCampo);
@@ -73,6 +66,10 @@ export const Step1Event: React.FC<Step1EventProps> = ({
       dispararErro('A data do evento não pode estar no passado.', 'data_evento', 'input-data-evento');
       return;
     }
+    if (!state.horario_inicio_evento || !state.horario_inicio_evento.trim()) {
+      dispararErro('Por favor, informe o horário de início do evento.', 'horario_inicio_evento', 'input-horario-inicio');
+      return;
+    }
     if (!state.cidade || !state.cidade.trim()) {
       if (selecionouOutra) {
         dispararErro('Por favor, digite o nome da sua cidade.', 'cidade', 'input-cidade-customizada');
@@ -89,9 +86,22 @@ export const Step1Event: React.FC<Step1EventProps> = ({
       dispararErro('A quantidade de adultos não pode ser maior que o total de pessoas.', 'qtd_adultos', 'input-qtd-adultos');
       return;
     }
-    if (!state.duracao_horas || state.duracao_horas <= 0 || state.duracao_horas > 12) {
-      dispararErro('A duração do evento deve estar entre 1 e 12 horas.', 'duracao_horas', 'input-duracao');
-      return;
+    if (!state.evento_longo_ou_multiplos_dias) {
+      if (
+        !state.duracao_horas ||
+        !Number.isInteger(state.duracao_horas) ||
+        state.duracao_horas <= 0 ||
+        state.duracao_horas > 12
+      ) {
+        dispararErro(
+          'Por favor, confirme a duração do seu evento (de 1 a 12 horas inteiras).',
+          'duracao_horas',
+          'input-duracao'
+        );
+        return;
+      }
+    } else if (!state.duracao_horas) {
+      handleAtualizarCampo('duracao_horas', 12);
     }
     if (!state.outras_bebidas_alcoolicas) {
       dispararErro('Informe se haverá outras bebidas alcoólicas no evento.', 'outras_bebidas_alcoolicas', 'btn-outras-nao');
@@ -221,7 +231,7 @@ export const Step1Event: React.FC<Step1EventProps> = ({
           <div className="flex items-center justify-between">
             <label htmlFor="input-horario-inicio" className="flex items-center gap-2 text-xs font-semibold text-stone-200">
               <Clock className="w-4 h-4 text-amber-400" />
-              Horário de Início do Evento
+              Horário de Início do Evento <span className="text-rose-400">*</span>
             </label>
             {state.horario_inicio_evento && (
               <span className="text-[11px] text-amber-400 font-mono font-medium">
@@ -232,6 +242,7 @@ export const Step1Event: React.FC<Step1EventProps> = ({
           <input
             id="input-horario-inicio"
             type="time"
+            required
             value={state.horario_inicio_evento || ''}
             onChange={(e) => handleAtualizarCampo('horario_inicio_evento', e.target.value)}
             className="w-full bg-stone-900 border border-stone-700 focus:border-amber-500 focus:ring-1 focus:ring-amber-500 rounded-lg px-3.5 py-2.5 text-sm text-white outline-none transition [color-scheme:dark]"
@@ -382,7 +393,7 @@ export const Step1Event: React.FC<Step1EventProps> = ({
               Duração do Evento <span className="text-rose-400">*</span>
             </label>
             <span className="text-sm font-bold font-mono text-amber-400">
-              {state.duracao_horas || 4} horas
+              {state.duracao_horas ? `${state.duracao_horas} horas` : '4 horas (sugestão)'}
             </span>
           </div>
 
@@ -391,9 +402,9 @@ export const Step1Event: React.FC<Step1EventProps> = ({
             type="range"
             min="1"
             max="12"
-            step="0.5"
+            step="1"
             value={state.duracao_horas || 4}
-            onChange={(e) => handleAtualizarCampo('duracao_horas', parseFloat(e.target.value))}
+            onChange={(e) => handleAtualizarCampo('duracao_horas', parseInt(e.target.value, 10))}
             className="w-full accent-amber-500 bg-stone-800 h-2 rounded-lg cursor-pointer"
           />
 
@@ -405,7 +416,7 @@ export const Step1Event: React.FC<Step1EventProps> = ({
                 type="button"
                 onClick={() => handleAtualizarCampo('duracao_horas', h)}
                 className={`flex-1 py-1.5 rounded-md border text-center transition ${
-                  (state.duracao_horas ?? 4) === h
+                  state.duracao_horas === h
                     ? 'bg-amber-500/20 border-amber-500 text-amber-300 font-bold'
                     : 'bg-stone-900 border-stone-800 text-stone-400 hover:text-stone-200 hover:bg-stone-800'
                 }`}
@@ -413,6 +424,41 @@ export const Step1Event: React.FC<Step1EventProps> = ({
                 {h}h
               </button>
             ))}
+          </div>
+
+          {/* Opção para Eventos com mais de 12h ou em múltiplos dias */}
+          <div className="pt-2 border-t border-stone-800/80">
+            <button
+              type="button"
+              id="btn-evento-longo"
+              onClick={() => {
+                const novoValor = !state.evento_longo_ou_multiplos_dias;
+                handleAtualizarCampo('evento_longo_ou_multiplos_dias', novoValor);
+                if (novoValor && !state.duracao_horas) {
+                  handleAtualizarCampo('duracao_horas', 12);
+                }
+              }}
+              className={`w-full p-3 rounded-xl border text-left flex items-start gap-3 transition cursor-pointer ${
+                state.evento_longo_ou_multiplos_dias
+                  ? 'bg-amber-950/40 border-amber-500/80 ring-1 ring-amber-500/50 text-white'
+                  : 'bg-stone-900/60 border-stone-800 hover:border-stone-700 text-stone-300'
+              }`}
+            >
+              <input
+                type="checkbox"
+                checked={Boolean(state.evento_longo_ou_multiplos_dias)}
+                readOnly
+                className="mt-0.5 rounded border-stone-700 text-amber-500 focus:ring-amber-500 accent-amber-500 pointer-events-none"
+              />
+              <div className="space-y-1 text-xs">
+                <span className="font-semibold text-amber-300 block">
+                  Evento com mais de 12 horas ou em múltiplos dias
+                </span>
+                <span className="text-[11px] text-stone-400 block leading-relaxed">
+                  Para eventos de longa duração ou múltiplos dias, não extrapolamos fórmulas automáticas. Seus dados serão preservados e o dimensionamento será refinado diretamente com a equipe comercial no WhatsApp.
+                </span>
+              </div>
+            </button>
           </div>
         </div>
 

@@ -10,7 +10,7 @@ export const CONTRACT_VERSION = '1';
 export const WHATSAPP_ALBANOS_NUMERO = '553288223023'; // Número comercial da Albanos
 export const BARRIL_VOLUME_LITROS = 50;
 export const ZONA_JUSTA_LITROS = 10;
-export const ALCADA_DESCONTO_BARGANHA_PERCENTUAL = 0.05; // 5% sobre produtos em PIX/DINHEIRO
+export const ALCADA_DESCONTO_BARGANHA_PERCENTUAL = 0.05; // 5% sobre produtos + frete conhecido em PIX
 
 export const PORTFOLIO_ESTILOS: Record<EstiloChope, EstiloInfo> = {
   pilsen: {
@@ -194,10 +194,11 @@ export const ESTADO_INICIAL: CalculatorState = {
   versaoContrato: CONTRACT_VERSION,
   origem: 'direct',
   cidade: '',
-  duracao_horas: 4,
-  precisa_chopeira: true,
-  precisa_gas: true,
-  modalidade_logistica: 'ENTREGA',
+  duracao_horas: undefined,
+  evento_longo_ou_multiplos_dias: false,
+  precisa_chopeira: undefined,
+  precisa_gas: undefined,
+  modalidade_logistica: 'A_DEFINIR',
   endereco: {
     cidade: '',
     logradouro: '',
@@ -222,7 +223,7 @@ export const ESTADO_INICIAL: CalculatorState = {
   revisao_pre_orcamento_confirmada: false,
   aceite_orcamento: 'UNKNOWN',
   forma_pagamento: 'A_DEFINIR',
-  parcelas_cartao: 1,
+  parcelas_cartao: undefined,
   houve_barganha: false,
   cupom_desconto: '',
   status_excecao_comercial: 'NAO_SOLICITADA',

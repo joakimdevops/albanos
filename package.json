@@ -8,7 +8,10 @@
     "build": "vite build",
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "test": "tsx src/businessRules/tests/engineTests.ts && tsx src/businessRules/__tests__/semanticConsistency.test.ts",
+    "test:engine": "tsx src/businessRules/tests/engineTests.ts",
+    "test:semantic": "tsx src/businessRules/__tests__/semanticConsistency.test.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",

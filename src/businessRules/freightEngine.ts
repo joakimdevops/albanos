@@ -45,7 +45,10 @@ export function calcularFrete(
       valor: null,
       status: 'A_CONFIRMAR',
       faixaNome: 'A definir',
-      detalhe: 'Informe a cidade para identificar o valor do frete.',
+      detalhe:
+        modalidade === 'A_DEFINIR'
+          ? 'Escolha entre entrega ou retirada na fábrica para definir o frete.'
+          : 'Informe a cidade para identificar o valor do frete.',
     };
   }
 

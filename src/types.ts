@@ -18,7 +18,7 @@ export type EstiloChope =
 
 export type ModalidadeLogistica = 'ENTREGA' | 'RETIRADA_FABRICA' | 'A_DEFINIR';
 
-export type FormaPagamento = 'PIX' | 'DINHEIRO' | 'CARTAO' | 'A_DEFINIR';
+export type FormaPagamento = 'PIX' | 'CARTAO' | 'A_DEFINIR';
 
 export type AceiteOrcamento = 'UNKNOWN' | 'PENDENTE' | 'SIM' | 'NAO';
 
@@ -90,6 +90,7 @@ export interface OrcamentoDetalhado {
   litrosComerciais: number;
   itens: OrcamentoSubtotalEstilo[];
   totalProdutosBruto: number;
+  baseFinanceira?: number;
   descontoBarganhaValor: number;
   descontoAplicado: boolean;
   totalProdutosLiquido: number;
@@ -116,6 +117,7 @@ export interface CalculatorState {
   qtd_pessoas?: number;
   qtd_adultos?: number;
   duracao_horas?: number;
+  evento_longo_ou_multiplos_dias?: boolean;
   outras_bebidas_alcoolicas?: OutrasBebidas;
 
   // Derivados de dimensionamento
@@ -130,15 +132,16 @@ export interface CalculatorState {
   mix: MixBarris;
 
   // Equipamentos
-  precisa_chopeira: boolean;
-  precisa_gas: boolean;
-  qtd_chopeiras_referencia?: number;
+  precisa_chopeira?: boolean;
+  precisa_gas?: boolean;
 
   // Logística
   modalidade_logistica: ModalidadeLogistica;
   endereco: EnderecoOperacional;
-  data_retirada?: string;
-  hora_retirada?: string;
+  data_entrega?: string; // YYYY-MM-DD
+  hora_entrega?: string; // HH:mm
+  data_retirada?: string; // YYYY-MM-DD
+  hora_retirada?: string; // HH:mm
   frete: FreteResultado;
 
   // Revisão e Orçamento
@@ -148,7 +151,7 @@ export interface CalculatorState {
 
   // Pagamento e negociação
   forma_pagamento: FormaPagamento;
-  parcelas_cartao: number;
+  parcelas_cartao?: number;
   houve_barganha: boolean;
   cupom_desconto?: string;
   descricao_excecao_comercial?: string;

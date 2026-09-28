@@ -4,8 +4,8 @@
  * Albano's Chopp Calculator — Tela T6: Equipamentos (Chopeira e Gás) V1.1
  */
 
-import React from 'react';
-import { Zap, Gauge, ArrowRight, CheckCircle2, Info } from 'lucide-react';
+import React, { useState } from 'react';
+import { Zap, Gauge, ArrowRight, CheckCircle2, Info, AlertCircle } from 'lucide-react';
 import { CalculatorState } from '../../types';
 
 interface Step4EquipmentProps {
@@ -21,6 +21,19 @@ export const Step4Equipment: React.FC<Step4EquipmentProps> = ({
   onNext,
   onBack,
 }) => {
+  const [erroEquip, setErroEquip] = useState<string | null>(null);
+
+  const respostasCompletas =
+    typeof state.precisa_chopeira === 'boolean' && typeof state.precisa_gas === 'boolean';
+
+  const handleAvancar = () => {
+    if (!respostasCompletas) {
+      setErroEquip('Por favor, responda se você precisa de chopeira e de cilindro de gás para continuar.');
+      return;
+    }
+    onNext();
+  };
+
   return (
     <div id="step-equipamentos" className="max-w-xl mx-auto space-y-6 py-4 px-4">
       {/* Header */}
@@ -55,9 +68,12 @@ export const Step4Equipment: React.FC<Step4EquipmentProps> = ({
             <div className="flex items-center gap-1.5 bg-stone-900 p-1 rounded-lg border border-stone-800">
               <button
                 type="button"
-                onClick={() => onUpdateField('precisa_chopeira', false)}
-                className={`px-3 py-1 text-xs rounded-md font-medium transition ${
-                  !state.precisa_chopeira
+                onClick={() => {
+                  setErroEquip(null);
+                  onUpdateField('precisa_chopeira', false);
+                }}
+                className={`px-3 py-1 text-xs rounded-md font-medium transition cursor-pointer ${
+                  state.precisa_chopeira === false
                     ? 'bg-amber-600 text-stone-950 font-bold'
                     : 'text-stone-400 hover:text-white'
                 }`}
@@ -66,9 +82,12 @@ export const Step4Equipment: React.FC<Step4EquipmentProps> = ({
               </button>
               <button
                 type="button"
-                onClick={() => onUpdateField('precisa_chopeira', true)}
-                className={`px-3 py-1 text-xs rounded-md font-medium transition ${
-                  state.precisa_chopeira
+                onClick={() => {
+                  setErroEquip(null);
+                  onUpdateField('precisa_chopeira', true);
+                }}
+                className={`px-3 py-1 text-xs rounded-md font-medium transition cursor-pointer ${
+                  state.precisa_chopeira === true
                     ? 'bg-amber-600 text-stone-950 font-bold'
                     : 'text-stone-400 hover:text-white'
                 }`}
@@ -78,16 +97,25 @@ export const Step4Equipment: React.FC<Step4EquipmentProps> = ({
             </div>
           </div>
 
-          {state.precisa_chopeira && (
+          {state.precisa_chopeira === true && (
             <div className="bg-stone-900/80 p-3 rounded-lg border border-stone-800 text-xs text-stone-300 flex items-center justify-between gap-3">
               <div>
-                <span className="font-semibold text-white">
-                  Chopeira elétrica solicitada
+                <span className="font-semibold text-white block">
+                  Chopeira elétrica Albanos solicitada
+                </span>
+                <span className="text-[11px] text-stone-400 block mt-0.5">
+                  Disponibilidade e voltagem serão confirmadas pela equipe comercial.
                 </span>
               </div>
-              <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-emerald-950 border border-emerald-800/60 text-emerald-400 shrink-0 self-start">
-                Inclusa
+              <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-amber-950 border border-amber-800/60 text-amber-400 shrink-0 self-start">
+                A confirmar
               </span>
+            </div>
+          )}
+
+          {state.precisa_chopeira === false && (
+            <div className="bg-stone-900/80 p-3 rounded-lg border border-stone-800 text-xs text-stone-400">
+              Utilizará chopeira própria ou estrutura do local do evento.
             </div>
           )}
         </div>
@@ -110,9 +138,12 @@ export const Step4Equipment: React.FC<Step4EquipmentProps> = ({
             <div className="flex items-center gap-1.5 bg-stone-900 p-1 rounded-lg border border-stone-800">
               <button
                 type="button"
-                onClick={() => onUpdateField('precisa_gas', false)}
-                className={`px-3 py-1 text-xs rounded-md font-medium transition ${
-                  !state.precisa_gas
+                onClick={() => {
+                  setErroEquip(null);
+                  onUpdateField('precisa_gas', false);
+                }}
+                className={`px-3 py-1 text-xs rounded-md font-medium transition cursor-pointer ${
+                  state.precisa_gas === false
                     ? 'bg-amber-600 text-stone-950 font-bold'
                     : 'text-stone-400 hover:text-white'
                 }`}
@@ -121,9 +152,12 @@ export const Step4Equipment: React.FC<Step4EquipmentProps> = ({
               </button>
               <button
                 type="button"
-                onClick={() => onUpdateField('precisa_gas', true)}
-                className={`px-3 py-1 text-xs rounded-md font-medium transition ${
-                  state.precisa_gas
+                onClick={() => {
+                  setErroEquip(null);
+                  onUpdateField('precisa_gas', true);
+                }}
+                className={`px-3 py-1 text-xs rounded-md font-medium transition cursor-pointer ${
+                  state.precisa_gas === true
                     ? 'bg-amber-600 text-stone-950 font-bold'
                     : 'text-stone-400 hover:text-white'
                 }`}
@@ -133,23 +167,39 @@ export const Step4Equipment: React.FC<Step4EquipmentProps> = ({
             </div>
           </div>
 
-          {state.precisa_gas && (
-            <div className="bg-stone-900/80 p-3 rounded-lg border border-stone-800 text-xs text-stone-300 flex items-center justify-between">
+          {state.precisa_gas === true && (
+            <div className="bg-stone-900/80 p-3 rounded-lg border border-stone-800 text-xs text-stone-300 flex items-center justify-between gap-3">
               <div>
-                <span className="font-semibold text-white">Cilindro de Gás (CO2) solicitado</span>
+                <span className="font-semibold text-white block">Cilindro de Gás (CO2) solicitado</span>
+                <span className="text-[11px] text-stone-400 block mt-0.5">
+                  Disponibilidade confirmada pela equipe junto aos barris.
+                </span>
               </div>
-              <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-emerald-950 border border-emerald-800/60 text-emerald-400">
-                Incluso
+              <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-amber-950 border border-amber-800/60 text-amber-400 shrink-0 self-start">
+                A confirmar
               </span>
             </div>
           )}
+
+          {state.precisa_gas === false && (
+            <div className="bg-stone-900/80 p-3 rounded-lg border border-stone-800 text-xs text-stone-400">
+              Utilizará gás próprio ou estrutura do local do evento.
+            </div>
+          )}
         </div>
+
+        {erroEquip && (
+          <div className="p-3 bg-rose-950/40 border border-rose-600/50 rounded-xl text-xs text-rose-200 flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
+            <span>{erroEquip}</span>
+          </div>
+        )}
 
         {/* Nota Operacional Importante */}
         <div className="p-3.5 rounded-xl bg-stone-950 border border-stone-800/80 text-[11px] text-stone-400 flex items-start gap-2.5">
           <Info className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
           <div>
-            O empréstimo dos equipamentos está sujeito a disponibilidade que será confirmada pelo time da logística após a conclusão do orçamento.
+            O empréstimo dos equipamentos está sujeito à disponibilidade que será confirmada pelo time de logística após o encaminhamento da cotação.
           </div>
         </div>
       </div>
@@ -159,7 +209,7 @@ export const Step4Equipment: React.FC<Step4EquipmentProps> = ({
         <button
           type="button"
           onClick={onBack}
-          className="px-5 py-2.5 rounded-xl border border-stone-800 hover:bg-stone-800 text-stone-300 text-xs font-medium transition"
+          className="px-5 py-2.5 rounded-xl border border-stone-800 hover:bg-stone-800 text-stone-300 text-xs font-medium transition cursor-pointer"
         >
           Voltar
         </button>
@@ -167,8 +217,12 @@ export const Step4Equipment: React.FC<Step4EquipmentProps> = ({
         <button
           type="button"
           id="btn-avancar-logistica"
-          onClick={onNext}
-          className="inline-flex items-center gap-2 px-6 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-500 text-stone-950 font-bold text-xs transition shadow-lg shadow-amber-950"
+          onClick={handleAvancar}
+          className={`inline-flex items-center gap-2 px-6 py-2.5 rounded-xl font-bold text-xs transition shadow-lg ${
+            respostasCompletas
+              ? 'bg-amber-600 hover:bg-amber-500 text-stone-950 shadow-amber-950 cursor-pointer active:scale-95'
+              : 'bg-stone-800 text-stone-400 border border-stone-700 cursor-not-allowed opacity-80'
+          }`}
         >
           <span>Continuar para Logística</span>
           <ArrowRight className="w-4 h-4" />

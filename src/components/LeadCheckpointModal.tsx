@@ -60,13 +60,13 @@ export const LeadCheckpointModal: React.FC<LeadCheckpointModalProps> = ({
 
         {/* Body */}
         <div className="py-4 space-y-4 text-sm">
-          <div className="p-4 bg-emerald-950/40 border border-emerald-800/40 rounded-xl text-xs sm:text-sm text-emerald-200 flex items-start gap-3">
+          <div className="p-4 bg-gradient-to-r from-[#0c443c]/50 via-stone-900 to-[#082d28]/40 border border-[#0c443c] ring-1 ring-emerald-500/30 rounded-xl text-xs sm:text-sm text-emerald-200 flex items-start gap-3 shadow-md shadow-[#0c443c]/20">
             <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0 mt-0.5" />
             <div className="space-y-1">
               <span className="font-bold text-emerald-300 block text-sm">
                 Não vamos recomeçar do zero!
               </span>
-              <p className="text-xs text-emerald-200/90 leading-relaxed">
+              <p className="text-xs text-stone-200 leading-relaxed">
                 O time Albanos vai dar continuidade imediata à sua solicitação exatamente de onde paramos aqui.
               </p>
             </div>

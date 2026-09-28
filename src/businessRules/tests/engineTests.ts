@@ -31,6 +31,11 @@ import {
   calcularDataDMenos1,
   obterHorarioPadraoRetirada,
   validarDataRetiradaFabrica,
+  validarDataEntrega,
+  validarDataLogistica,
+  validarHorarioLogistica,
+  calcularSugestaoDataLogistica,
+  obterHorarioSugeridoLogistica,
   formatarDataBrasileira,
 } from '../logisticsEngine';
 
@@ -124,15 +129,24 @@ export function executarTodosOsTestes(): {
     assertTest('D-06', 'Dimensionamento', 'Faltando outras_bebidas_alcoolicas bloqueia', 'Erro lançado', 'Bloqueado com sucesso', true);
   }
 
-  // D-07: duração fracionada >4h -> aplicar fallback linear (+10%/h acima de 4h)
-  // Exemplo: 5.5h sem outra alcoólica -> base 1.5 * (1 + 0.1 * 1.5) = 1.5 * 1.15 = 1.725 L/adulto. Para 80 adultos = 138 L.
+  // D-07: duração fracionada é rejeitada (somente inteiros de 1 a 12 horas)
   try {
-    const fatorFracionado = calcularFatorConsumo(5.5, 'NAO');
-    const d07 = calcularDimensionamento(80, 5.5, 'NAO');
-    const esperadoD07 = 80 * 1.725; // 138 L
-    assertTest('D-07', 'Dimensionamento', 'Duração fracionada >4h (5.5h, 80 adultos)', esperadoD07, d07.litrosEstimados, Math.abs(d07.litrosEstimados - esperadoD07) < 0.01);
+    let lancouErro = false;
+    try {
+      calcularFatorConsumo(5.5, 'NAO');
+    } catch {
+      lancouErro = true;
+    }
+    assertTest(
+      'D-07',
+      'Dimensionamento',
+      'Duração fracionada rejeitada (somente inteiros de 1 a 12h)',
+      true,
+      lancouErro,
+      lancouErro
+    );
   } catch (e: any) {
-    assertTest('D-07', 'Dimensionamento', 'Duração fracionada >4h', '138 L', e.message, false);
+    assertTest('D-07', 'Dimensionamento', 'Duração fracionada rejeitada', true, e.message, false);
   }
 
   // ==========================================
@@ -303,7 +317,7 @@ export function executarTodosOsTestes(): {
     assertTest('O-03', 'Orçamento', 'Bloqueio de preço', false, e.message, false);
   }
 
-  // O-04: Barganha + PIX/DINHEIRO -> 5% somente sobre produtos (2390 * 0.05 = 119.50 -> 2270.50 produtos); frete intacto (75.00) -> Total = 2345.50
+  // O-04: Barganha + PIX -> 5% sobre produtos + frete conhecido (2390 + 75 = 2465; 2465 * 0.05 = 123.25; Total = 2341.75)
   try {
     const mixO04 = { pilsen: 1, session_ipa: 1, amber: 1, life_lager: 0, american_ipa: 0, pale_ale: 0 };
     const orcO04 = calcularOrcamento({
@@ -313,21 +327,27 @@ export function executarTodosOsTestes(): {
       formaPagamento: 'PIX',
       houveBarganha: true,
     });
-    const esperadoDesc = 119.5;
-    const esperadoLiq = 2270.5;
-    const esperadoGeral = 2345.5;
+    const esperadoBase = 2465;
+    const esperadoDesc = 123.25;
+    const esperadoGeral = 2341.75;
     const okDesc =
+      orcO04.baseFinanceira === esperadoBase &&
       orcO04.descontoBarganhaValor === esperadoDesc &&
-      orcO04.totalProdutosLiquido === esperadoLiq &&
       orcO04.totalGeral === esperadoGeral;
-    assertTest('O-04', 'Orçamento', 'Barganha 5% apenas sobre produtos; frete intacto', esperadoGeral, orcO04.totalGeral, okDesc);
+    assertTest(
+      'O-04',
+      'Orçamento',
+      'Barganha 5% incide sobre base completa (produtos + frete conhecido)',
+      esperadoGeral,
+      orcO04.totalGeral,
+      okDesc
+    );
   } catch (e: any) {
-    assertTest('O-04', 'Orçamento', 'Barganha 5%', 2345.5, e.message, false);
+    assertTest('O-04', 'Orçamento', 'Barganha 5%', 2341.75, e.message, false);
   }
 
-  // O-05: Cartão 3x -> aplicar multiplicador 1.0755 apenas aos produtos; frete depois
-  // 2390 * 1.0755 = 2570.445 -> arredondado 2570.45.
-  // Frete: 75.00 -> Total = 2645.45.
+  // O-05: Cartão 3x -> multiplicador 1.0755 sobre base completa (produtos + frete conhecido)
+  // (2390 + 75) * 1.0755 = 2465 * 1.0755 = 2651.1075 -> 2651.11. Parcela = 2651.11 / 3 = 883.70.
   try {
     const mixO05 = { pilsen: 1, session_ipa: 1, amber: 1, life_lager: 0, american_ipa: 0, pale_ale: 0 };
     const orcO05 = calcularOrcamento({
@@ -338,14 +358,256 @@ export function executarTodosOsTestes(): {
       parcelasCartao: 3,
       houveBarganha: false,
     });
-    const esperadoProdutosCartao = 2570.45;
-    const esperadoTotalCartao = 2645.45;
+    const esperadoTotalCartao = 2651.11;
+    const esperadoParcelaCartao = 883.7;
     const okCartao =
-      Math.abs(orcO05.totalProdutosLiquido - esperadoProdutosCartao) <= 0.05 &&
+      orcO05.baseFinanceira === 2465 &&
+      Math.abs((orcO05.valorParcelaCartao || 0) - esperadoParcelaCartao) <= 0.05 &&
       Math.abs((orcO05.totalGeral || 0) - esperadoTotalCartao) <= 0.05;
-    assertTest('O-05', 'Orçamento', 'Cartão 3x com multiplicador 1.0755 apenas sobre produtos', esperadoTotalCartao, orcO05.totalGeral, okCartao);
+    assertTest(
+      'O-05',
+      'Orçamento',
+      'Cartão 3x com multiplicador 1.0755 sobre produtos + frete',
+      esperadoTotalCartao,
+      orcO05.totalGeral,
+      okCartao
+    );
   } catch (e: any) {
-    assertTest('O-05', 'Orçamento', 'Cartão 3x', 2645.45, e.message, false);
+    assertTest('O-05', 'Orçamento', 'Cartão 3x', 2651.11, e.message, false);
+  }
+
+  // O-05A: Cartão 1x -> multiplicador 1.0439 sobre base completa (2465 * 1.0439 = 2573.21)
+  try {
+    const mixCartao = { pilsen: 1, session_ipa: 1, amber: 1, life_lager: 0, american_ipa: 0, pale_ale: 0 };
+    const orc1x = calcularOrcamento({
+      barrisTotal: 3,
+      mix: mixCartao,
+      frete: { valor: 75, status: 'FIXADO', faixaNome: 'RMBH' },
+      formaPagamento: 'CARTAO',
+      parcelasCartao: 1,
+      houveBarganha: false,
+    });
+    const esperadoTotal1x = 2573.21;
+    const ok1x =
+      orc1x.multiplicadorCartao === 1.0439 &&
+      orc1x.baseFinanceira === 2465 &&
+      Math.abs((orc1x.totalGeral || 0) - esperadoTotal1x) <= 0.05 &&
+      Math.abs((orc1x.valorParcelaCartao || 0) - esperadoTotal1x) <= 0.05;
+    assertTest(
+      'O-05A',
+      'Orçamento',
+      'Cartão 1x aplica multiplicador 1.0439 sobre produtos + frete (não é sem acréscimo)',
+      esperadoTotal1x,
+      orc1x.totalGeral,
+      ok1x
+    );
+  } catch (e: any) {
+    assertTest('O-05A', 'Orçamento', 'Cartão 1x', 2573.21, e.message, false);
+  }
+
+  // O-05B: Cartão 2x -> multiplicador 1.0650 sobre base completa (2465 * 1.0650 = 2625.23; parcela = 1312.61)
+  try {
+    const mixCartao = { pilsen: 1, session_ipa: 1, amber: 1, life_lager: 0, american_ipa: 0, pale_ale: 0 };
+    const orc2x = calcularOrcamento({
+      barrisTotal: 3,
+      mix: mixCartao,
+      frete: { valor: 75, status: 'FIXADO', faixaNome: 'RMBH' },
+      formaPagamento: 'CARTAO',
+      parcelasCartao: 2,
+      houveBarganha: false,
+    });
+    const esperadoTotal2x = 2625.23;
+    const esperadoParcela2x = 1312.61;
+    const ok2x =
+      orc2x.multiplicadorCartao === 1.065 &&
+      Math.abs((orc2x.valorParcelaCartao || 0) - esperadoParcela2x) <= 0.05 &&
+      Math.abs((orc2x.totalGeral || 0) - esperadoTotal2x) <= 0.05;
+    assertTest(
+      'O-05B',
+      'Orçamento',
+      'Cartão 2x aplica multiplicador 1.0650 sobre produtos + frete (parcela = total / 2)',
+      esperadoTotal2x,
+      orc2x.totalGeral,
+      ok2x
+    );
+  } catch (e: any) {
+    assertTest('O-05B', 'Orçamento', 'Cartão 2x', 2625.23, e.message, false);
+  }
+
+  // O-05C: Cartão 6x -> multiplicador 1.1076 sobre base completa (2465 * 1.1076 = 2730.23; parcela = 455.04)
+  try {
+    const mixCartao = { pilsen: 1, session_ipa: 1, amber: 1, life_lager: 0, american_ipa: 0, pale_ale: 0 };
+    const orc6x = calcularOrcamento({
+      barrisTotal: 3,
+      mix: mixCartao,
+      frete: { valor: 75, status: 'FIXADO', faixaNome: 'RMBH' },
+      formaPagamento: 'CARTAO',
+      parcelasCartao: 6,
+      houveBarganha: false,
+    });
+    const esperadoTotal6x = 2730.23;
+    const esperadoParcela6x = 455.04;
+    const ok6x =
+      orc6x.multiplicadorCartao === 1.1076 &&
+      Math.abs((orc6x.valorParcelaCartao || 0) - esperadoParcela6x) <= 0.05 &&
+      Math.abs((orc6x.totalGeral || 0) - esperadoTotal6x) <= 0.05;
+    assertTest(
+      'O-05C',
+      'Orçamento',
+      'Cartão 6x aplica multiplicador 1.1076 sobre produtos + frete (parcela = total / 6)',
+      esperadoTotal6x,
+      orc6x.totalGeral,
+      ok6x
+    );
+  } catch (e: any) {
+    assertTest('O-05C', 'Orçamento', 'Cartão 6x', 2730.23, e.message, false);
+  }
+
+  // O-05D: Cartão 12x -> multiplicador 1.2000 sobre base completa (2465 * 1.2 = 2958.00; parcela = 246.50)
+  try {
+    const mixCartao = { pilsen: 1, session_ipa: 1, amber: 1, life_lager: 0, american_ipa: 0, pale_ale: 0 };
+    const orc12x = calcularOrcamento({
+      barrisTotal: 3,
+      mix: mixCartao,
+      frete: { valor: 75, status: 'FIXADO', faixaNome: 'RMBH' },
+      formaPagamento: 'CARTAO',
+      parcelasCartao: 12,
+      houveBarganha: false,
+    });
+    const esperadoTotal12x = 2958.0;
+    const esperadoParcela12x = 246.5;
+    const ok12x =
+      orc12x.multiplicadorCartao === 1.2 &&
+      Math.abs((orc12x.valorParcelaCartao || 0) - esperadoParcela12x) <= 0.05 &&
+      Math.abs((orc12x.totalGeral || 0) - esperadoTotal12x) <= 0.05;
+    assertTest(
+      'O-05D',
+      'Orçamento',
+      'Cartão 12x aplica multiplicador 1.2000 sobre produtos + frete (parcela = total / 12)',
+      esperadoTotal12x,
+      orc12x.totalGeral,
+      ok12x
+    );
+  } catch (e: any) {
+    assertTest('O-05D', 'Orçamento', 'Cartão 12x', 2958.0, e.message, false);
+  }
+
+  // O-05E: Troca de parcelas atualiza valor da parcela e total dinamicamente
+  try {
+    const mixCartao = { pilsen: 1, session_ipa: 1, amber: 1, life_lager: 0, american_ipa: 0, pale_ale: 0 };
+    const orcIni = calcularOrcamento({
+      barrisTotal: 3,
+      mix: mixCartao,
+      frete: { valor: 75, status: 'FIXADO', faixaNome: 'RMBH' },
+      formaPagamento: 'CARTAO',
+      parcelasCartao: 1,
+      houveBarganha: false,
+    });
+    const orcFim = calcularOrcamento({
+      barrisTotal: 3,
+      mix: mixCartao,
+      frete: { valor: 75, status: 'FIXADO', faixaNome: 'RMBH' },
+      formaPagamento: 'CARTAO',
+      parcelasCartao: 6,
+      houveBarganha: false,
+    });
+    const okTroca =
+      orcIni.valorParcelaCartao !== orcFim.valorParcelaCartao &&
+      (orcIni.totalGeral || 0) < (orcFim.totalGeral || 0);
+    assertTest(
+      'O-05E',
+      'Orçamento',
+      'Troca do número de parcelas de 1x para 6x recalcula parcela e total sobre base completa',
+      true,
+      okTroca,
+      okTroca
+    );
+  } catch (e: any) {
+    assertTest('O-05E', 'Orçamento', 'Troca de parcelas', true, e.message, false);
+  }
+
+  // O-05F: Frete A_CONFIRMAR não bloqueia orçamento e demonstra desconto sobre produtos sem fechar total geral
+  try {
+    const mixAConfirmar = { pilsen: 1, session_ipa: 1, amber: 1, life_lager: 0, american_ipa: 0, pale_ale: 0 };
+    const orcAConfPix = calcularOrcamento({
+      barrisTotal: 3,
+      mix: mixAConfirmar,
+      frete: { valor: null, status: 'A_CONFIRMAR', faixaNome: 'Sob Consulta' },
+      formaPagamento: 'PIX',
+      houveBarganha: true,
+    });
+    const okAConfPix =
+      orcAConfPix.invariantesValidos === true &&
+      orcAConfPix.totalGeral === null &&
+      orcAConfPix.descontoBarganhaValor === 119.5 &&
+      orcAConfPix.totalProdutosLiquido === 2270.5 &&
+      orcAConfPix.totalGeralFormatado.includes('Frete a confirmar');
+    assertTest(
+      'O-05F',
+      'Orçamento',
+      'Frete A_CONFIRMAR não bloqueia orçamento: demonstra desconto nos produtos e totalGeral null',
+      true,
+      okAConfPix,
+      okAConfPix
+    );
+  } catch (e: any) {
+    assertTest('O-05F', 'Orçamento', 'Frete A_CONFIRMAR PIX', true, e.message, false);
+  }
+
+  // O-05G: Frete A_CONFIRMAR com Cartão demonstra parcela sobre produtos sem fechar total geral
+  try {
+    const mixAConfirmar = { pilsen: 1, session_ipa: 1, amber: 1, life_lager: 0, american_ipa: 0, pale_ale: 0 };
+    const orcAConfCartao = calcularOrcamento({
+      barrisTotal: 3,
+      mix: mixAConfirmar,
+      frete: { valor: null, status: 'A_CONFIRMAR', faixaNome: 'Sob Consulta' },
+      formaPagamento: 'CARTAO',
+      parcelasCartao: 6,
+      houveBarganha: false,
+    });
+    const esperadoParcelaProd = 441.19; // 2390 * 1.1076 / 6
+    const okAConfCartao =
+      orcAConfCartao.invariantesValidos === true &&
+      orcAConfCartao.totalGeral === null &&
+      Math.abs((orcAConfCartao.valorParcelaCartao || 0) - esperadoParcelaProd) <= 0.05 &&
+      orcAConfCartao.totalGeralFormatado.includes('Frete a confirmar');
+    assertTest(
+      'O-05G',
+      'Orçamento',
+      'Frete A_CONFIRMAR com cartão demonstra parcela sobre produtos e totalGeral null',
+      true,
+      okAConfCartao,
+      okAConfCartao
+    );
+  } catch (e: any) {
+    assertTest('O-05G', 'Orçamento', 'Frete A_CONFIRMAR Cartão', true, e.message, false);
+  }
+
+  // O-05H: Confirmação do frete recalcula base completa fechando valores matematicamente
+  try {
+    const mixConfirmado = { pilsen: 1, session_ipa: 1, amber: 1, life_lager: 0, american_ipa: 0, pale_ale: 0 };
+    const orcConfirmado = calcularOrcamento({
+      barrisTotal: 3,
+      mix: mixConfirmado,
+      frete: { valor: 75, status: 'FIXADO', faixaNome: 'Confirmado RMBH' },
+      formaPagamento: 'CARTAO',
+      parcelasCartao: 6,
+      houveBarganha: false,
+    });
+    const okConf =
+      orcConfirmado.totalGeral === 2730.23 &&
+      orcConfirmado.valorParcelaCartao === 455.04 &&
+      orcConfirmado.baseFinanceira === 2465;
+    assertTest(
+      'O-05H',
+      'Orçamento',
+      'Confirmação de frete reconstrói base e fecha matematicamente parcelas e total',
+      2730.23,
+      orcConfirmado.totalGeral,
+      okConf
+    );
+  } catch (e: any) {
+    assertTest('O-05H', 'Orçamento', 'Confirmação Frete Cartão', 2730.23, e.message, false);
   }
 
   // ==========================================
@@ -473,6 +735,60 @@ export function executarTodosOsTestes(): {
     assertTest('I-05', 'Interoperabilidade', 'Invalidação seletiva de descendentes', true, e.message, false);
   }
 
+  // I-06: wa.me com frete A_CONFIRMAR -> não expõe parcelas ou totais com desconto parciais como se fossem definitivos
+  try {
+    const estadoI06 = criarEstadoInicial();
+    estadoI06.data_evento = '2026-11-20';
+    estadoI06.cidade = 'Nova Lima';
+    estadoI06.barris_total_escolhidos = 3;
+    estadoI06.mix = { pilsen: 3, life_lager: 0, session_ipa: 0, amber: 0, american_ipa: 0, pale_ale: 0 };
+    estadoI06.frete = { status: 'A_CONFIRMAR', valor: null, faixaNome: 'Fora de Área' };
+    estadoI06.forma_pagamento = 'CARTAO';
+    estadoI06.parcelas_cartao = 3;
+    estadoI06.orcamento = calcularOrcamento({
+      barrisTotal: 3,
+      mix: estadoI06.mix,
+      frete: estadoI06.frete,
+      formaPagamento: 'CARTAO',
+      parcelasCartao: 3,
+      houveBarganha: false,
+    });
+
+    const msgCartao = gerarTextoMensagemWhatsApp(estadoI06, 'final');
+    const semParcelaDefinitivaCartao =
+      !msgCartao.includes('3x de R$') &&
+      msgCartao.includes('recalculados sobre produtos + frete após a confirmação do frete') &&
+      msgCartao.includes('Frete a confirmar');
+
+    // Agora testa com PIX e barganha
+    estadoI06.forma_pagamento = 'PIX';
+    estadoI06.houve_barganha = true;
+    estadoI06.orcamento = calcularOrcamento({
+      barrisTotal: 3,
+      mix: estadoI06.mix,
+      frete: estadoI06.frete,
+      formaPagamento: 'PIX',
+      houveBarganha: true,
+    });
+
+    const msgPix = gerarTextoMensagemWhatsApp(estadoI06, 'final');
+    const semTotalLiquidoDefinitivoPix =
+      !msgPix.includes('com 5% off') &&
+      msgPix.includes('desconto final será aplicado sobre o total do pedido (produtos + frete) após a confirmação do frete');
+
+    const okI06 = semParcelaDefinitivaCartao && semTotalLiquidoDefinitivoPix;
+    assertTest(
+      'I-06',
+      'Interoperabilidade',
+      'wa.me com frete A_CONFIRMAR não apresenta parcelas ou totais com desconto como definitivos',
+      true,
+      okI06,
+      okI06
+    );
+  } catch (e: any) {
+    assertTest('I-06', 'Interoperabilidade', 'Handoff wa.me com frete pendente', true, e.message, false);
+  }
+
   // =========================================================================
   // GRUPO P: PERSISTÊNCIA LOCAL (LocalStorage)
   // =========================================================================
@@ -581,16 +897,20 @@ export function executarTodosOsTestes(): {
     calculoD1Correto
   );
 
-  // L-02: Herança do horário padrão de retirada a partir do início do evento
-  const horaComEvento = obterHorarioPadraoRetirada('19:30');
+  // L-02: Herança do horário padrão de retirada ajustado à janela comercial (10:00 a 17:00)
+  const horaComEventoDentroJanela = obterHorarioPadraoRetirada('14:30');
+  const horaComEventoAposJanela = obterHorarioPadraoRetirada('19:30');
   const horaSemEvento = obterHorarioPadraoRetirada(undefined);
-  const horaCorreta = horaComEvento === '19:30' && horaSemEvento === '10:00';
+  const horaCorreta =
+    horaComEventoDentroJanela === '14:30' &&
+    horaComEventoAposJanela === '17:00' &&
+    horaSemEvento === '10:00';
   assertTest(
     'L-02',
     'Logística & Retirada',
-    'Horário de retirada na fábrica herda horário do evento ou recorre ao padrão 10:00',
-    '19:30 e 10:00',
-    `${horaComEvento} e ${horaSemEvento}`,
+    'Horário de retirada na fábrica respeita janela comercial (14:30 preservado, 19:30 ajustado para 17:00, undefined recorre a 10:00)',
+    '14:30, 17:00 e 10:00',
+    `${horaComEventoDentroJanela}, ${horaComEventoAposJanela} e ${horaSemEvento}`,
     horaCorreta
   );
 
@@ -617,16 +937,16 @@ export function executarTodosOsTestes(): {
     valHoje.valido === true && valPassado.valido === false
   );
 
-  // L-05: Validação de data igual ou posterior ao evento (deve ser menor que a data do evento)
+  // L-05: Validação de data no próprio dia do evento (permitida) e posterior ao evento (rejeitada)
   const valMesmoDiaEvento = validarDataRetiradaFabrica('2026-10-15', '2026-10-15', '2026-10-01');
   const valAposEvento = validarDataRetiradaFabrica('2026-10-16', '2026-10-15', '2026-10-01');
   assertTest(
     'L-05',
     'Logística & Retirada',
-    'Data de retirada igual ou posterior ao evento é rejeitada (precisa ser menor que o evento)',
-    'false e false',
+    'Data de retirada no mesmo dia do evento é permitida, e posterior ao evento é rejeitada',
+    'true e false',
     `${valMesmoDiaEvento.valido} e ${valAposEvento.valido}`,
-    !valMesmoDiaEvento.valido && !valAposEvento.valido
+    valMesmoDiaEvento.valido === true && valAposEvento.valido === false
   );
 
   // L-06: Validação de data válida em D - 1 (maior que hoje e menor que o evento)
@@ -640,7 +960,7 @@ export function executarTodosOsTestes(): {
     valDMenos1.valido === true
   );
 
-  // L-07: Injeção automática de D-1 e horário ao selecionar RETIRADA_FABRICA via motor de dependências
+  // L-07: Injeção de D-1 e horário sugerido comercial ao selecionar RETIRADA_FABRICA via motor de dependências
   const estadoLog = criarEstadoInicial();
   estadoLog.data_evento = '2026-11-20';
   estadoLog.horario_inicio_evento = '18:00';
@@ -648,14 +968,214 @@ export function executarTodosOsTestes(): {
   const autoD1Correto =
     estadoComRetirada.modalidade_logistica === 'RETIRADA_FABRICA' &&
     estadoComRetirada.data_retirada === '2026-11-19' &&
-    estadoComRetirada.hora_retirada === '18:00';
+    estadoComRetirada.hora_retirada === '17:00';
   assertTest(
     'L-07',
     'Logística & Retirada',
-    'Motor de dependências define automaticamente D-1 (2026-11-19) e horário ao selecionar RETIRADA_FABRICA',
-    '2026-11-19 às 18:00',
+    'Motor de dependências define D-1 (2026-11-19) e horário ajustado à janela comercial (17:00 para evento às 18:00)',
+    '2026-11-19 às 17:00',
     `${estadoComRetirada.data_retirada} às ${estadoComRetirada.hora_retirada}`,
     autoD1Correto
+  );
+
+  // L-08: Sugestão para ENTREGA via motor de dependências
+  const estadoLogEntrega = criarEstadoInicial();
+  estadoLogEntrega.data_evento = '2026-11-20';
+  estadoLogEntrega.horario_inicio_evento = '14:00';
+  const estadoComEntrega = aplicarMudancaEstado(estadoLogEntrega, 'modalidade_logistica', 'ENTREGA');
+  const entregaSugeridaCorreta =
+    estadoComEntrega.modalidade_logistica === 'ENTREGA' &&
+    estadoComEntrega.data_entrega === '2026-11-19' &&
+    estadoComEntrega.hora_entrega === '14:00';
+  assertTest(
+    'L-08',
+    'Logística & Entrega',
+    'Motor de dependências define D-1 e preserva horário dentro da janela comercial (14:00) para ENTREGA',
+    '2026-11-19 às 14:00',
+    `${estadoComEntrega.data_entrega} às ${estadoComEntrega.hora_entrega}`,
+    entregaSugeridaCorreta
+  );
+
+  // ==========================================
+  // CENÁRIOS OBRIGATÓRIOS DA ETAPA 5 (ITEM 15)
+  // DATAS (1 A 7) E HORÁRIOS (8 A 16)
+  // ==========================================
+
+  // 1. D-1 é sugerido quando está dentro do intervalo válido
+  const sugD1 = calcularSugestaoDataLogistica('2026-10-15', '2026-10-01');
+  assertTest(
+    'L-09',
+    'Logística (Datas)',
+    '1. D-1 é sugerido quando está dentro do intervalo válido (evento 2026-10-15 -> sugere 2026-10-14)',
+    '2026-10-14',
+    sugD1,
+    sugD1 === '2026-10-14'
+  );
+
+  // 2. Se D-1 estiver no passado, a sugestão não produz data inválida
+  const sugD1Passado = calcularSugestaoDataLogistica('2026-10-01', '2026-10-01');
+  assertTest(
+    'L-10',
+    'Logística (Datas)',
+    '2. Se D-1 estiver no passado, a sugestão não produz data inválida (recorre a hoje 2026-10-01)',
+    '2026-10-01',
+    sugD1Passado,
+    sugD1Passado === '2026-10-01'
+  );
+
+  // 3. Data igual a hoje é aceita
+  const valHojeAceita = validarDataLogistica('2026-10-01', '2026-10-15', '2026-10-01');
+  assertTest(
+    'L-11',
+    'Logística (Datas)',
+    '3. Data igual a hoje é aceita',
+    true,
+    valHojeAceita.valido,
+    valHojeAceita.valido === true
+  );
+
+  // 4. Data igual à data do evento é aceita
+  const valEventoAceita = validarDataLogistica('2026-10-15', '2026-10-15', '2026-10-01');
+  assertTest(
+    'L-12',
+    'Logística (Datas)',
+    '4. Data igual à data do evento é aceita',
+    true,
+    valEventoAceita.valido,
+    valEventoAceita.valido === true
+  );
+
+  // 5. Data entre hoje e o evento é aceita
+  const valIntermediaria = validarDataLogistica('2026-10-10', '2026-10-15', '2026-10-01');
+  assertTest(
+    'L-13',
+    'Logística (Datas)',
+    '5. Data entre hoje e o evento é aceita',
+    true,
+    valIntermediaria.valido,
+    valIntermediaria.valido === true
+  );
+
+  // 6. Data anterior a hoje é rejeitada
+  const valPassadoRejeitada = validarDataLogistica('2026-09-30', '2026-10-15', '2026-10-01');
+  assertTest(
+    'L-14',
+    'Logística (Datas)',
+    '6. Data anterior a hoje é rejeitada',
+    false,
+    valPassadoRejeitada.valido,
+    valPassadoRejeitada.valido === false
+  );
+
+  // 7. Data posterior ao evento é rejeitada
+  const valPosteriorRejeitada = validarDataLogistica('2026-10-16', '2026-10-15', '2026-10-01');
+  assertTest(
+    'L-15',
+    'Logística (Datas)',
+    '7. Data posterior ao evento é rejeitada',
+    false,
+    valPosteriorRejeitada.valido,
+    valPosteriorRejeitada.valido === false
+  );
+
+  // 8. 10h é aceito
+  const val10h = validarHorarioLogistica('10:00', '2026-10-14', '2026-10-15', '18:00');
+  assertTest(
+    'L-16',
+    'Logística (Horários)',
+    '8. 10h é aceito (limite inferior da janela comercial)',
+    true,
+    val10h.valido,
+    val10h.valido === true
+  );
+
+  // 9. 17h é aceito
+  const val17h = validarHorarioLogistica('17:00', '2026-10-14', '2026-10-15', '18:00');
+  assertTest(
+    'L-17',
+    'Logística (Horários)',
+    '9. 17h é aceito (limite superior da janela comercial)',
+    true,
+    val17h.valido,
+    val17h.valido === true
+  );
+
+  // 10. Horário anterior a 10h é rejeitado
+  const valAntes10h = validarHorarioLogistica('09:59', '2026-10-14', '2026-10-15', '18:00');
+  assertTest(
+    'L-18',
+    'Logística (Horários)',
+    '10. Horário anterior a 10h é rejeitado',
+    false,
+    valAntes10h.valido,
+    valAntes10h.valido === false
+  );
+
+  // 11. Horário posterior a 17h é rejeitado
+  const valApos17h = validarHorarioLogistica('17:01', '2026-10-14', '2026-10-15', '18:00');
+  assertTest(
+    'L-19',
+    'Logística (Horários)',
+    '11. Horário posterior a 17h é rejeitado',
+    false,
+    valApos17h.valido,
+    valApos17h.valido === false
+  );
+
+  // 12. Evento às 8h gera sugestão 10h
+  const sugEvento8h = obterHorarioSugeridoLogistica('08:00');
+  assertTest(
+    'L-20',
+    'Logística (Horários)',
+    '12. Evento às 8h gera sugestão 10h (ajustado ao início da janela comercial)',
+    '10:00',
+    sugEvento8h,
+    sugEvento8h === '10:00'
+  );
+
+  // 13. Evento às 14h gera sugestão 14h
+  const sugEvento14h = obterHorarioSugeridoLogistica('14:00');
+  assertTest(
+    'L-21',
+    'Logística (Horários)',
+    '13. Evento às 14h gera sugestão 14h (preserva horário dentro da janela comercial)',
+    '14:00',
+    sugEvento14h,
+    sugEvento14h === '14:00'
+  );
+
+  // 14. Evento às 20h gera sugestão 17h
+  const sugEvento20h = obterHorarioSugeridoLogistica('20:00');
+  assertTest(
+    'L-22',
+    'Logística (Horários)',
+    '14. Evento às 20h gera sugestão 17h (ajustado ao teto da janela comercial)',
+    '17:00',
+    sugEvento20h,
+    sugEvento20h === '17:00'
+  );
+
+  // 15. No dia do evento, horário antes ou igual ao evento é aceito
+  const valDiaEventoAntes = validarHorarioLogistica('12:00', '2026-10-15', '2026-10-15', '14:00');
+  const valDiaEventoIgual = validarHorarioLogistica('14:00', '2026-10-15', '2026-10-15', '14:00');
+  assertTest(
+    'L-23',
+    'Logística (Horários)',
+    '15. No dia do evento, horário antes ou igual ao evento é aceito (12:00 e 14:00 para evento às 14:00)',
+    'true e true',
+    `${valDiaEventoAntes.valido} e ${valDiaEventoIgual.valido}`,
+    valDiaEventoAntes.valido === true && valDiaEventoIgual.valido === true
+  );
+
+  // 16. No dia do evento, horário após o evento é rejeitado
+  const valDiaEventoApos = validarHorarioLogistica('15:00', '2026-10-15', '2026-10-15', '14:00');
+  assertTest(
+    'L-24',
+    'Logística (Horários)',
+    '16. No dia do evento, horário após o evento é rejeitado (15:00 > 14:00)',
+    false,
+    valDiaEventoApos.valido,
+    valDiaEventoApos.valido === false
   );
 
   const passouCount = itens.filter((i) => i.passou).length;
@@ -667,4 +1187,14 @@ export function executarTodosOsTestes(): {
     falhou: falhouCount,
     itens,
   };
+}
+
+if (typeof process !== 'undefined' && Array.isArray(process?.argv) && process.argv[1]?.endsWith('engineTests.ts')) {
+  const res = executarTodosOsTestes();
+  console.log(`TOTAL ENGINE TESTS: ${res.total} | PASSOU: ${res.passou} | FALHOU: ${res.falhou}`);
+  if (res.falhou > 0) {
+    console.error('FALHAS:');
+    res.itens.filter((i) => !i.passou).forEach((f) => console.error(f));
+    process.exit?.(1);
+  }
 }

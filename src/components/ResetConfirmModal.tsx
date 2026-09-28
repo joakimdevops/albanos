@@ -78,7 +78,7 @@ export const ResetConfirmModal: React.FC<ResetConfirmModalProps> = ({
           </div>
 
           <p className="text-xs text-stone-300 leading-relaxed">
-            Ao confirmar, todas as preferências, convidados, mix de estilos e orçamento calculado
+            Ao confirmar, todas as preferências, convidados, mix de estilos e cotação calculada
             serão apagados da memória e o aplicativo será recarregado na página inicial em{' '}
             <strong className="text-amber-400">modo de fábrica</strong> (dados 100% zerados e estado original).
           </p>

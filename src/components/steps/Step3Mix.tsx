@@ -115,7 +115,7 @@ export const Step3Mix: React.FC<Step3MixProps> = ({
         id="status-invariante-mix"
         className={`scroll-mt-20 p-4 rounded-xl border flex flex-col gap-3 transition ${
           validacao.valido
-            ? 'bg-emerald-950/30 border-emerald-700/50 text-emerald-200'
+            ? 'bg-gradient-to-r from-[#0c443c]/45 via-stone-900 to-[#082d28]/35 border-[#0c443c] ring-1 ring-emerald-500/30 text-emerald-200 shadow-md shadow-[#0c443c]/20'
             : isExcesso
             ? 'bg-amber-950/40 border-amber-500/60 text-amber-200'
             : 'bg-amber-950/30 border-amber-600/50 text-amber-200'

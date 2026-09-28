@@ -68,7 +68,7 @@ export const Step0Entry: React.FC<Step0EntryProps> = ({
             Calculadora de Chope
           </h1>
           <p className="text-xs sm:text-base text-stone-300 max-w-md mx-auto leading-relaxed">
-            Calcule a quantidade exata de chope para o seu evento, escolha seus estilos preferidos e receba seu orçamento em minutos.
+            Calcule a quantidade exata de chope para o seu evento, escolha seus estilos preferidos e receba sua cotação em minutos.
           </p>
         </div>
 
@@ -92,7 +92,7 @@ export const Step0Entry: React.FC<Step0EntryProps> = ({
                 onClick={onClearSaved}
                 className="text-xs text-stone-400 hover:text-amber-300 transition-colors underline underline-offset-4 py-1"
               >
-                Gerar um novo orçamento
+                Gerar uma nova cotação
               </button>
             </div>
           ) : (
@@ -109,7 +109,7 @@ export const Step0Entry: React.FC<Step0EntryProps> = ({
 
           <div className="text-[11px] text-stone-400 flex items-center justify-center gap-1.5 font-medium">
             <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-            <span>Calcule a quantidade ideal e gere o orçamento em minutos.</span>
+            <span>Calcule a quantidade ideal e gere sua cotação em minutos.</span>
           </div>
         </div>
 
@@ -179,8 +179,8 @@ export const Step0Entry: React.FC<Step0EntryProps> = ({
         </div>
 
         {/* Como Funciona em 3 Passos */}
-        <div className="p-4 rounded-xl bg-stone-900/50 border border-stone-800 space-y-3">
-          <div className="text-xs font-bold text-white flex items-center gap-1.5">
+        <div className="p-4 rounded-xl bg-gradient-to-br from-[#0c443c]/25 via-stone-900/70 to-stone-950 border border-[#0c443c]/40 space-y-3 shadow-md shadow-black/40">
+          <div className="text-xs font-bold text-white flex items-center gap-1.5 font-['Raleway',sans-serif]">
             <Gauge className="w-4 h-4 text-amber-400" />
             Como funciona em 3 passos simples
           </div>
@@ -206,7 +206,7 @@ export const Step0Entry: React.FC<Step0EntryProps> = ({
                 3
               </span>
               <p className="text-stone-300">
-                <strong className="text-white">Orçamento na hora:</strong> Gere o orçamento em poucos minutos e encaminhe seu pedido para o time Albanos no WhatsApp.
+                <strong className="text-white">Cotação na hora:</strong> Gere sua cotação em poucos minutos e encaminhe sua solicitação para o time Albanos no WhatsApp.
               </p>
             </div>
           </div>
@@ -219,7 +219,7 @@ export const Step0Entry: React.FC<Step0EntryProps> = ({
             onClick={onStart}
             className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-3 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/30 font-bold text-sm transition"
           >
-            <span>Gerar Orçamento</span>
+            <span>Gerar Cotação</span>
             <ArrowRight className="w-4 h-4" />
           </button>
         </div>

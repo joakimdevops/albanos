@@ -16,10 +16,14 @@ import { formatarDataBrasileira } from './logisticsEngine';
  */
 export function gerarFraseStartAtendimento(
   etapaAtual?: number,
-  tipoHandoff?: HandoffTipo
+  tipoHandoff?: HandoffTipo,
+  estado?: CalculatorState
 ): string {
   if (tipoHandoff === 'final' || etapaAtual === 8) {
-    return 'Olá, equipe Albanos! Finalizei meu pedido com o orçamento acima aprovado pelo app. Como procedemos com a confirmação da data e o pagamento?';
+    if (estado?.frete?.status === 'A_CONFIRMAR') {
+      return 'Olá, equipe Albanos! Encaminhei minha cotação pelo app com frete a confirmar e seguirei o atendimento com o Time Comercial. Podem confirmar a disponibilidade e o valor do frete para darmos sequência?';
+    }
+    return 'Olá, equipe Albanos! Confirmei minha cotação pelo app e seguirei o atendimento com o Time Comercial pelo WhatsApp. Gostaria de verificar a disponibilidade e os próximos passos.';
   }
 
   switch (etapaAtual) {
@@ -34,9 +38,11 @@ export function gerarFraseStartAtendimento(
     case 5:
       return 'Olá, equipe Albanos! Estava informando o local de entrega. Gostaria de confirmar a disponibilidade de rota e horários para a minha data.';
     case 6:
-      return 'Olá, equipe Albanos! Revisei as informações do meu evento e gostaria de tirar algumas dúvidas antes de fechar o orçamento oficial.';
+      return 'Olá, equipe Albanos! Revisei as informações do meu evento e gostaria de tirar algumas dúvidas antes de gerar a cotação.';
     case 7:
-      return 'Olá, equipe Albanos! Já visualizei o orçamento acima no app. Gostaria de tirar dúvidas sobre as formas de pagamento e confirmar a reserva dos meus barris.';
+      return 'Olá, equipe Albanos! Estava preenchendo meus dados de contato e gostaria de ajuda para avançar com o meu pedido.';
+    case 8:
+      return 'Olá, equipe Albanos! Já visualizei a cotação no app. Gostaria de tirar dúvidas sobre as formas de pagamento e prosseguir com o meu pedido.';
     case 0:
     default:
       return 'Olá, equipe Albanos! Gostaria de ajuda de um consultor para planejar o chopp para o meu evento.';
@@ -57,7 +63,7 @@ export function gerarTextoMensagemWhatsApp(
 
   // Cabeçalho Enxuto
   if (tipoHandoff === 'final' || etapaAtual === 8) {
-    linhas.push(`🍻 *Cervejaria Albanos • Pedido Finalizado no App*`);
+    linhas.push(`🍻 *Cervejaria Albanos • Cotação Confirmada pelo Cliente*`);
   } else {
     linhas.push(`🍻 *Cervejaria Albanos • Atendimento Calculadora*`);
     if (etapaAtual !== undefined && etapaAtual > 0) {
@@ -80,7 +86,12 @@ export function gerarTextoMensagemWhatsApp(
   const pessoas = estado.qtd_pessoas || estado.qtd_adultos || 0;
   const adultos = estado.qtd_adultos || 0;
   if (pessoas > 0 || adultos > 0) {
-    const duracao = estado.duracao_horas ? ` • ${estado.duracao_horas}h de festa` : '';
+    let duracao = '';
+    if (estado.evento_longo_ou_multiplos_dias) {
+      duracao = ' • Evento com mais de 12h ou múltiplos dias (análise comercial)';
+    } else if (estado.duracao_horas) {
+      duracao = ` • ${estado.duracao_horas}h de festa`;
+    }
     const outrasBebidas = estado.outras_bebidas_alcoolicas === 'SIM' ? ' (com outras bebidas)' : '';
     linhas.push(`👥 *Convidados:* ${pessoas} pessoas (${adultos} adultos)${duracao}${outrasBebidas}`);
   }
@@ -97,14 +108,17 @@ export function gerarTextoMensagemWhatsApp(
 
   // Equipamentos (Chopeira e Gás)
   if (
-    estado.precisa_chopeira !== undefined &&
+    typeof estado.precisa_chopeira === 'boolean' &&
     estado.barris_total_escolhidos &&
     estado.barris_total_escolhidos > 0
   ) {
     const chopStr = estado.precisa_chopeira
-      ? 'Elétrica Albanos inclusa'
-      : 'Própria do cliente';
-    linhas.push(`⚡ *Chopeira:* ${chopStr}`);
+      ? 'Chopeira Albanos solicitada (disponibilidade a confirmar)'
+      : 'Chopeira própria do cliente';
+    const gasStr = typeof estado.precisa_gas === 'boolean'
+      ? (estado.precisa_gas ? ' • Gás CO2 solicitado (disponibilidade a confirmar)' : ' • Gás próprio')
+      : '';
+    linhas.push(`⚡ *Equipamentos:* ${chopStr}${gasStr}`);
   }
 
   // Logística (Retirada ou Entrega)
@@ -112,35 +126,80 @@ export function gerarTextoMensagemWhatsApp(
     const dataRet = estado.data_retirada ? formatarDataBrasileira(estado.data_retirada) : '';
     const horaRet = estado.hora_retirada ? ` às ${estado.hora_retirada}` : '';
     const agendamento = dataRet ? ` (${dataRet}${horaRet})` : '';
-    linhas.push(`🚚 *Logística:* Retirada na Fábrica${agendamento} • Frete Grátis`);
-  } else if (estado.endereco && estado.endereco.logradouro) {
-    const bairro = estado.endereco.bairro ? ` - ${estado.endereco.bairro}` : '';
-    const compl =
-      estado.endereco.complemento && estado.endereco.complemento !== 'SEM_COMPLEMENTO'
-        ? ` (${estado.endereco.complemento})`
-        : '';
-    const freteTxt =
-      estado.frete.status === 'FIXADO' && estado.frete.valor !== null
-        ? formatarMoeda(estado.frete.valor)
-        : 'a confirmar';
-    linhas.push(`🚚 *Entrega:* ${estado.endereco.logradouro}, ${estado.endereco.numero || 's/n'}${bairro}${compl} • Frete: ${freteTxt}`);
+    linhas.push(`🚚 *Logística:* Retirada na Fábrica (R. Rainha Elizabeth, 639 – Jardim Canadá, Nova Lima – MG, CEP 34007-790)${agendamento} • Frete Grátis`);
+  } else if (estado.modalidade_logistica === 'ENTREGA') {
+    const dataEnt = estado.data_entrega ? formatarDataBrasileira(estado.data_entrega) : '';
+    const horaEnt = estado.hora_entrega ? ` às ${estado.hora_entrega}` : '';
+    const agendamento = dataEnt ? ` (${dataEnt}${horaEnt})` : '';
+
+    if (estado.endereco && estado.endereco.logradouro) {
+      const bairro = estado.endereco.bairro ? ` - ${estado.endereco.bairro}` : '';
+      const compl =
+        estado.endereco.complemento && estado.endereco.complemento !== 'SEM_COMPLEMENTO'
+          ? ` (${estado.endereco.complemento})`
+          : '';
+      const freteTxt =
+        estado.frete.status === 'FIXADO' && estado.frete.valor !== null
+          ? formatarMoeda(estado.frete.valor)
+          : 'a confirmar';
+      linhas.push(`🚚 *Entrega:* ${estado.endereco.logradouro}, ${estado.endereco.numero || 's/n'}${bairro}${compl}${agendamento} • Frete: ${freteTxt}`);
+    } else {
+      linhas.push(`🚚 *Entrega:* No local do evento${agendamento} (endereço a definir)`);
+    }
+  } else {
+    linhas.push(`🚚 *Logística:* A definir (Entrega no local ou Retirada na fábrica)`);
   }
 
-  // Orçamento Consolidado
+  // Cotação Consolidada
   if (estado.orcamento && estado.orcamento.invariantesValidos) {
-    const desc = estado.orcamento.descontoAplicado ? ` (com 5% off)` : '';
-    const condPagto =
-      estado.forma_pagamento && estado.forma_pagamento !== 'A_DEFINIR'
-        ? ` • ${estado.forma_pagamento}`
-        : '';
-    linhas.push(`💰 *Orçamento:* ${estado.orcamento.totalGeralFormatado}${desc}${condPagto}`);
+    const freteConhecido =
+      estado.frete &&
+      estado.frete.status !== 'A_CONFIRMAR' &&
+      estado.frete.valor !== null;
+
+    if (freteConhecido) {
+      const desc = estado.orcamento.descontoAplicado ? ` (com 5% off)` : '';
+      let condPagto = '';
+      if (estado.forma_pagamento && estado.forma_pagamento !== 'A_DEFINIR') {
+        if (
+          estado.forma_pagamento === 'CARTAO' &&
+          estado.orcamento.valorParcelaCartao &&
+          estado.orcamento.parcelasCartao
+        ) {
+          condPagto = ` • Cartão (${estado.orcamento.parcelasCartao}x de ${formatarMoeda(estado.orcamento.valorParcelaCartao)})`;
+        } else {
+          condPagto = ` • ${estado.forma_pagamento}`;
+        }
+      }
+      linhas.push(`💰 *Cotação:* ${estado.orcamento.totalGeralFormatado}${desc}${condPagto}`);
+    } else {
+      // Frete A_CONFIRMAR: não publicar total fechado nem parcelas/descontos parciais como se fossem definitivos
+      const prodTxt = formatarMoeda(estado.orcamento.totalProdutosBruto);
+      linhas.push(`💰 *Cotação:* Produtos: ${prodTxt} + Frete a confirmar (total final a definir pela equipe Albanos)`);
+
+      const parcelas = estado.orcamento.parcelasCartao || estado.parcelas_cartao;
+      const temDesconto =
+        estado.orcamento.descontoAplicado ||
+        estado.houve_barganha ||
+        estado.cupom_desconto === 'ALBANOS';
+
+      if (estado.forma_pagamento === 'CARTAO') {
+        const parcTxt = parcelas ? ` em ${parcelas}x` : '';
+        linhas.push(`💳 *Condição:* Cartão${parcTxt} — total e parcelas serão recalculados sobre produtos + frete após a confirmação do frete`);
+      } else if (estado.forma_pagamento === 'PIX' && temDesconto) {
+        linhas.push(`💳 *Condição:* Pix com 5% de desconto — desconto final será aplicado sobre o total do pedido (produtos + frete) após a confirmação do frete`);
+      } else if (estado.forma_pagamento && estado.forma_pagamento !== 'A_DEFINIR') {
+        linhas.push(`💳 *Condição:* ${estado.forma_pagamento} — total final será fechado após a confirmação do frete`);
+      }
+    }
   }
 
   // Dados de Contato
   if (estado.contato && (estado.contato.nome_completo || estado.contato.telefone_responsavel)) {
     const nome = estado.contato.nome_completo ? estado.contato.nome_completo.trim() : '';
     const tel = estado.contato.telefone_responsavel ? estado.contato.telefone_responsavel.trim() : '';
-    const partes = [nome, tel].filter(Boolean);
+    const email = estado.contato.email && estado.contato.email.trim() ? estado.contato.email.trim() : '';
+    const partes = [nome, tel, email].filter(Boolean);
     if (partes.length > 0) {
       linhas.push(`👤 *Responsável:* ${partes.join(' • ')}`);
     }
@@ -148,7 +207,7 @@ export function gerarTextoMensagemWhatsApp(
 
   // Pergunta / Frase de START contextual para continuidade
   linhas.push(``);
-  linhas.push(gerarFraseStartAtendimento(etapaAtual, tipoHandoff));
+  linhas.push(gerarFraseStartAtendimento(etapaAtual, tipoHandoff, estado));
 
   return linhas.join('\n');
 }

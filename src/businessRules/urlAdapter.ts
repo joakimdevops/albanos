@@ -11,11 +11,16 @@ import {
   ModalidadeLogistica,
   OutrasBebidas,
 } from '../types';
-import { CONTRACT_VERSION } from './domainConfig';
+import { CONTRACT_VERSION, ESTADO_INICIAL } from './domainConfig';
 import { aplicarMudancaEstado, calcularPrioridade } from './dependenciesEngine';
 import { calcularDimensionamento } from './dimensioningEngine';
 import { calcularFrete } from './freightEngine';
 import { somarBarrisMix, validarInvarianteMix } from './mixEngine';
+import {
+  validarDataLogistica,
+  validarDataRetiradaFabrica,
+  validarHorarioLogistica,
+} from './logisticsEngine';
 
 export interface URLImportResultado {
   sucesso: boolean;
@@ -27,43 +32,15 @@ export interface URLImportResultado {
 }
 
 /**
- * Cria um estado inicial limpo e canônico para a sessão.
+ * Cria um estado inicial limpo e canônico para a sessão reutilizando ESTADO_INICIAL.
  */
 export function criarEstadoInicial(): CalculatorState {
   return {
-    versaoContrato: CONTRACT_VERSION,
-    origem: 'direct',
-    cidade: 'Belo Horizonte',
-    duracao_horas: 4,
-    precisa_chopeira: true,
-    precisa_gas: true,
-    modalidade_logistica: 'ENTREGA',
-    endereco: {
-      cidade: 'Belo Horizonte',
-      logradouro: '',
-      numero: '',
-      bairro: '',
-      complemento: '',
-    },
-    mix: {
-      pilsen: 0,
-      life_lager: 0,
-      session_ipa: 0,
-      amber: 0,
-      american_ipa: 0,
-      pale_ale: 0,
-    },
-    frete: calcularFrete('ENTREGA', 'Belo Horizonte'),
-    revisao_pre_orcamento_confirmada: false,
-    aceite_orcamento: 'UNKNOWN',
-    forma_pagamento: 'A_DEFINIR',
-    parcelas_cartao: 1,
-    houve_barganha: false,
-    status_excecao_comercial: 'NAO_SOLICITADA',
-    contato: {},
-    prioridade_atendimento: 'NORMAL',
-    handoff_status: 'NAO_INICIADO',
-    etapaAtual: 1, // T1 Entrada
+    ...ESTADO_INICIAL,
+    mix: { ...ESTADO_INICIAL.mix },
+    endereco: { ...ESTADO_INICIAL.endereco },
+    frete: { ...ESTADO_INICIAL.frete },
+    contato: { ...ESTADO_INICIAL.contato },
   };
 }
 
@@ -84,8 +61,10 @@ export function importarParametrosURL(
   const src = searchParams.get('src');
   if (src === 'iara') {
     estado.origem = 'iara';
+    parametrosValidos++;
   } else if (src === 'internal_team') {
     estado.origem = 'internal_team';
+    parametrosValidos++;
   }
 
   // 2. Parâmetros explicitamente proibidos
@@ -136,10 +115,22 @@ export function importarParametrosURL(
     parametrosValidos++;
   }
 
-  // 6. Duração em horas
+  // 6. Duração em horas (inteiro de 1 a 12)
   const duracao = searchParams.get('duracao_horas');
-  if (duracao && !isNaN(Number(duracao)) && Number(duracao) > 0 && Number(duracao) <= 12) {
-    estado.duracao_horas = Number(duracao);
+  if (duracao && !isNaN(Number(duracao))) {
+    const dInt = Math.round(Number(duracao));
+    if (dInt >= 1 && dInt <= 12) {
+      estado.duracao_horas = dInt;
+      parametrosValidos++;
+    }
+  }
+
+  // 6.1 Evento longo (> 12h ou múltiplos dias)
+  const eventoLongo =
+    searchParams.get('evento_longo') ||
+    searchParams.get('evento_longo_ou_multiplos_dias');
+  if (eventoLongo === 'true' || eventoLongo === 'SIM' || eventoLongo === '1') {
+    estado.evento_longo_ou_multiplos_dias = true;
     parametrosValidos++;
   }
 
@@ -187,7 +178,14 @@ export function importarParametrosURL(
   const american = searchParams.get('barris_american_ipa');
   const pale = searchParams.get('barris_pale_ale');
 
-  if (pilsen !== null || session !== null || amber !== null) {
+  if (
+    pilsen !== null ||
+    session !== null ||
+    amber !== null ||
+    life !== null ||
+    american !== null ||
+    pale !== null
+  ) {
     const novoMix = {
       pilsen: pilsen ? Math.max(0, parseInt(pilsen, 10)) : 0,
       session_ipa: session ? Math.max(0, parseInt(session, 10)) : 0,
@@ -211,29 +209,64 @@ export function importarParametrosURL(
 
   // 11. Equipamentos
   const chopeira = searchParams.get('precisa_chopeira');
-  if (chopeira === 'SIM' || chopeira === 'NAO') {
-    estado.precisa_chopeira = chopeira === 'SIM';
-    if (estado.precisa_chopeira && estado.barris_total_escolhidos) {
-      estado.qtd_chopeiras_referencia = Math.ceil(estado.barris_total_escolhidos / 2);
-    }
+  if (chopeira === 'SIM' || chopeira === 'NAO' || chopeira === 'true' || chopeira === 'false') {
+    estado.precisa_chopeira = chopeira === 'SIM' || chopeira === 'true';
     parametrosValidos++;
   }
 
   const gas = searchParams.get('precisa_gas');
-  if (gas === 'SIM' || gas === 'NAO') {
-    estado.precisa_gas = gas === 'SIM';
+  if (gas === 'SIM' || gas === 'NAO' || gas === 'true' || gas === 'false') {
+    estado.precisa_gas = gas === 'SIM' || gas === 'true';
     parametrosValidos++;
   }
 
   // 12. Modalidade logística
   const modalidade = searchParams.get('modalidade_logistica');
-  if (modalidade === 'ENTREGA' || modalidade === 'RETIRADA_FABRICA') {
+  if (modalidade === 'ENTREGA' || modalidade === 'RETIRADA_FABRICA' || modalidade === 'A_DEFINIR') {
     estado.modalidade_logistica = modalidade as ModalidadeLogistica;
     estado.frete = calcularFrete(estado.modalidade_logistica, estado.cidade);
     parametrosValidos++;
   }
 
-  // 13. Data/hora de retirada (quando retirada)
+  // 12.1 Dados de Endereço (quando entrega)
+  const logradouro = searchParams.get('logradouro');
+  if (logradouro && logradouro.trim().length > 0) {
+    estado.endereco = {
+      ...estado.endereco,
+      logradouro: logradouro.trim(),
+    };
+    parametrosValidos++;
+  }
+  const numero = searchParams.get('numero');
+  if (numero && numero.trim().length > 0) {
+    estado.endereco = {
+      ...estado.endereco,
+      numero: numero.trim(),
+    };
+    parametrosValidos++;
+  }
+  const bairro = searchParams.get('bairro');
+  if (bairro && bairro.trim().length > 0) {
+    estado.endereco = {
+      ...estado.endereco,
+      bairro: bairro.trim(),
+    };
+    parametrosValidos++;
+  }
+
+  // 13. Data/hora de entrega (quando entrega)
+  const dataEntrega = searchParams.get('data_entrega');
+  if (dataEntrega && /^\d{4}-\d{2}-\d{2}$/.test(dataEntrega)) {
+    estado.data_entrega = dataEntrega;
+    parametrosValidos++;
+  }
+  const horaEntrega = searchParams.get('hora_entrega');
+  if (horaEntrega) {
+    estado.hora_entrega = horaEntrega.slice(0, 10).trim();
+    parametrosValidos++;
+  }
+
+  // 14. Data/hora de retirada (quando retirada)
   const dataRetirada = searchParams.get('data_retirada');
   if (dataRetirada && /^\d{4}-\d{2}-\d{2}$/.test(dataRetirada)) {
     estado.data_retirada = dataRetirada;
@@ -241,13 +274,13 @@ export function importarParametrosURL(
   }
   const horaRetirada = searchParams.get('hora_retirada');
   if (horaRetirada) {
-    estado.hora_retirada = horaRetirada.slice(0, 10);
+    estado.hora_retirada = horaRetirada.slice(0, 10).trim();
     parametrosValidos++;
   }
 
-  // 14. Forma de pagamento
+  // 15. Forma de pagamento (somente PIX ou CARTAO)
   const formaPagamento = searchParams.get('forma_pagamento');
-  if (formaPagamento === 'PIX' || formaPagamento === 'DINHEIRO' || formaPagamento === 'CARTAO') {
+  if (formaPagamento === 'PIX' || formaPagamento === 'CARTAO') {
     estado.forma_pagamento = formaPagamento as FormaPagamento;
     parametrosValidos++;
   }
@@ -261,26 +294,124 @@ export function importarParametrosURL(
     }
   }
 
-  // 15. Posicionar usuário no primeiro ponto que ainda exige decisão humana
-  // Etapas:
-  // 1: Entrada
-  // 2: Evento (se faltar data, adultos, duração ou outras bebidas)
-  // 3: Dimensionamento / Cenários (se faltar escolher barris_total_escolhidos)
-  // 4: Mix (se o mix não estiver fechado)
-  // 5: Equipamentos
-  // 6: Logística (se entrega e faltar endereço completo)
-  // 7: Revisão pré-orçamento
-  let primeiraEtapaPendente = 2; // Padrão: vai para Evento se entrar via URL
-  if (!estado.data_evento || !estado.qtd_adultos || !estado.duracao_horas || !estado.outras_bebidas_alcoolicas) {
-    primeiraEtapaPendente = 2;
+  // 16. Contato (Identificação do Lead)
+  const nomeContato = searchParams.get('nome_completo') || searchParams.get('nome');
+  if (nomeContato && nomeContato.trim().length >= 2) {
+    estado.contato = {
+      ...estado.contato,
+      nome_completo: nomeContato.trim(),
+    };
+    parametrosValidos++;
+  }
+
+  const telContato = searchParams.get('telefone_responsavel') || searchParams.get('telefone');
+  if (telContato && telContato.replace(/\D/g, '').length >= 10) {
+    estado.contato = {
+      ...estado.contato,
+      telefone_responsavel: telContato.trim(),
+    };
+    parametrosValidos++;
+  }
+
+  const emailContato = searchParams.get('email');
+  if (emailContato && emailContato.trim().length > 0) {
+    if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailContato.trim())) {
+      estado.contato = {
+        ...estado.contato,
+        email: emailContato.trim(),
+      };
+      parametrosValidos++;
+    } else {
+      parametrosIgnorados++;
+      detalhes.push('E-mail em formato inválido ignorado na URL.');
+    }
+  }
+
+  // 17. Flag de Revisão Confirmada via URL (se vier de deep-link avançado)
+  const revisaoConf = searchParams.get('revisao_pre_orcamento_confirmada');
+  if (revisaoConf === 'true' || revisaoConf === 'SIM' || revisaoConf === '1') {
+    estado.revisao_pre_orcamento_confirmada = true;
+    parametrosValidos++;
+  }
+
+  // 18. Posicionar usuário no primeiro ponto que ainda exige decisão humana
+  // Mapeamento idêntico às etapas do App.tsx:
+  // 0: Início
+  // 1: Dados do Evento (se faltar data_evento, horario_inicio_evento, qtd_adultos, duracao_horas, outras_bebidas_alcoolicas ou cidade)
+  // 2: Dimensionamento & Cenários (se faltar escolher barris_total_escolhidos)
+  // 3: Portfólio & Mix de Chope (se o mix não fechar com barris_total_escolhidos)
+  // 4: Equipamentos (se faltar resposta explícita para precisa_chopeira ou precisa_gas)
+  // 5: Logística & Frete (se modalidade_logistica for A_DEFINIR, ou se entrega faltar endereço/data/hora válidas, ou se retirada faltar data/hora válidas)
+  // 6: Revisão Pré-Orçamento (se todos os dados anteriores já estiverem satisfeitos e revisão ainda não foi confirmada)
+  // 7: Identificação do Lead (se revisão estiver confirmada mas faltar nome_completo ou telefone_responsavel)
+  // 8: Orçamento & Pagamento (se lead já identificado e orçamento pronto para aceite e fechamento)
+  let primeiraEtapaPendente = 1; // Padrão seguro ao chegar via URL com parâmetros: Etapa 1 (Evento)
+
+  if (
+    !estado.data_evento ||
+    !estado.horario_inicio_evento ||
+    !estado.qtd_adultos ||
+    (!estado.duracao_horas && !estado.evento_longo_ou_multiplos_dias) ||
+    !estado.outras_bebidas_alcoolicas ||
+    !estado.cidade
+  ) {
+    primeiraEtapaPendente = 1;
   } else if (!estado.barris_total_escolhidos) {
-    primeiraEtapaPendente = 3;
+    primeiraEtapaPendente = 2;
   } else if (!validarInvarianteMix(estado.mix, estado.barris_total_escolhidos).valido) {
+    primeiraEtapaPendente = 3;
+  } else if (estado.precisa_chopeira === undefined || estado.precisa_gas === undefined) {
     primeiraEtapaPendente = 4;
-  } else if (!estado.endereco.logradouro && estado.modalidade_logistica === 'ENTREGA') {
-    primeiraEtapaPendente = 6;
+  } else if (
+    !estado.modalidade_logistica ||
+    estado.modalidade_logistica === 'A_DEFINIR' ||
+    (estado.modalidade_logistica === 'ENTREGA' &&
+      (!estado.endereco ||
+        !estado.endereco.logradouro ||
+        !estado.endereco.logradouro.trim() ||
+        !estado.endereco.numero ||
+        !estado.endereco.numero.trim() ||
+        !estado.endereco.bairro ||
+        !estado.endereco.bairro.trim() ||
+        !estado.data_entrega ||
+        !estado.data_entrega.trim() ||
+        !validarDataLogistica(estado.data_entrega, estado.data_evento, undefined, 'entrega').valido ||
+        !estado.hora_entrega ||
+        !estado.hora_entrega.trim() ||
+        !validarHorarioLogistica(
+          estado.hora_entrega,
+          estado.data_entrega,
+          estado.data_evento,
+          estado.horario_inicio_evento,
+          'entrega'
+        ).valido)) ||
+    (estado.modalidade_logistica === 'RETIRADA_FABRICA' &&
+      (!estado.data_retirada ||
+        !estado.data_retirada.trim() ||
+        !validarDataLogistica(estado.data_retirada, estado.data_evento, undefined, 'retirada').valido ||
+        !estado.hora_retirada ||
+        !estado.hora_retirada.trim() ||
+        !validarHorarioLogistica(
+          estado.hora_retirada,
+          estado.data_retirada,
+          estado.data_evento,
+          estado.horario_inicio_evento,
+          'retirada'
+        ).valido))
+  ) {
+    primeiraEtapaPendente = 5;
+  } else if (!estado.revisao_pre_orcamento_confirmada) {
+    primeiraEtapaPendente = 6; // Todos os dados necessários preenchidos -> Revisão pré-orçamento
+  } else if (
+    !estado.contato ||
+    !estado.contato.nome_completo ||
+    !estado.contato.nome_completo.trim() ||
+    !estado.contato.telefone_responsavel ||
+    !estado.contato.telefone_responsavel.trim()
+  ) {
+    primeiraEtapaPendente = 7; // Identificação do Lead (Nome e Telefone)
   } else {
-    primeiraEtapaPendente = 7; // Revisão
+    primeiraEtapaPendente = 8; // Orçamento & Condições de Pagamento
   }
 
   estado.etapaAtual = primeiraEtapaPendente;

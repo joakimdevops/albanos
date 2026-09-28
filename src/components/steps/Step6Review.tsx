@@ -33,7 +33,7 @@ export const Step6Review: React.FC<Step6ReviewProps> = ({
   onGoToStep,
   onBack,
 }) => {
-  const barris = state.barris_total_escolhidos || 3;
+  const barris = state.barris_total_escolhidos || 0;
   const litros = barris * 50;
 
   return (
@@ -41,13 +41,13 @@ export const Step6Review: React.FC<Step6ReviewProps> = ({
       {/* Header */}
       <div className="space-y-1">
         <span className="text-xs font-semibold text-amber-400 uppercase tracking-wider">
-          Etapa 6 de 8 • Conferência Pré-Orçamento
+          Etapa 6 de 8 • Conferência Pré-Cotação
         </span>
         <h2 className="text-2xl font-bold text-white font-['Raleway',sans-serif]">
           Revise as escolhas do seu evento
         </h2>
         <p className="text-xs text-stone-400">
-          Confira os detalhes antes de gerarmos seu orçamento auditável oficial.
+          Confira os detalhes antes de prosseguirmos para a identificação e geração da sua cotação.
         </p>
       </div>
 
@@ -74,7 +74,11 @@ export const Step6Review: React.FC<Step6ReviewProps> = ({
                 em <strong>{state.cidade}</strong>
               </div>
               <div className="text-stone-400 mt-0.5">
-                {state.qtd_adultos} adultos ({state.duracao_horas}h) •{' '}
+                {state.qtd_adultos} adultos •{' '}
+                {state.evento_longo_ou_multiplos_dias
+                  ? 'Evento com mais de 12h ou múltiplos dias (análise comercial)'
+                  : `${state.duracao_horas}h de evento`}{' '}
+                •{' '}
                 {state.outras_bebidas_alcoolicas === 'SIM'
                   ? 'Com outras bebidas alcoólicas'
                   : 'Somente chope'}
@@ -126,13 +130,13 @@ export const Step6Review: React.FC<Step6ReviewProps> = ({
             </div>
             <div className="text-xs">
               <span className="font-bold text-stone-200 block text-sm mb-0.5">
-                Equipamentos
+                Equipamentos Solicitados
               </span>
               <div className="text-stone-300">
-                Chopeira elétrica: <strong>{state.precisa_chopeira ? 'Sim' : 'Não (equipamento próprio)'}</strong>
+                Chopeira elétrica: <strong>{state.precisa_chopeira === true ? 'Solicitada (disponibilidade a confirmar)' : state.precisa_chopeira === false ? 'Não (equipamento próprio)' : 'Não informado'}</strong>
               </div>
               <div className="text-stone-400 mt-0.5">
-                Cilindro de CO2: <strong>{state.precisa_gas ? 'Sim' : 'Não'}</strong>
+                Cilindro de CO2: <strong>{state.precisa_gas === true ? 'Solicitado (disponibilidade a confirmar)' : state.precisa_gas === false ? 'Não (gás próprio)' : 'Não informado'}</strong>
               </div>
             </div>
           </div>
@@ -159,6 +163,7 @@ export const Step6Review: React.FC<Step6ReviewProps> = ({
               {state.modalidade_logistica === 'RETIRADA_FABRICA' ? (
                 <div>
                   <div className="text-stone-300 font-semibold">Retirada na Fábrica (Jardim Canadá, Nova Lima)</div>
+                  <div className="text-stone-400 text-[11px] mt-0.5">R. Rainha Elizabeth, 639 – Jardim Canadá, Nova Lima – MG, CEP 34007-790</div>
                   {state.data_retirada && (
                     <div className="text-stone-300 text-xs mt-1 flex items-center gap-1.5 flex-wrap">
                       <span className="text-stone-400">Agendada para:</span>
@@ -168,15 +173,37 @@ export const Step6Review: React.FC<Step6ReviewProps> = ({
                       </strong>
                     </div>
                   )}
-                  <div className="text-emerald-400 font-semibold mt-1">Frete Grátis (R$ 0,00)</div>
+                  <div className="mt-1">
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#0c443c] border border-[#155e53] text-[10px] text-emerald-300 font-semibold">
+                      Frete Grátis (R$ 0,00)
+                    </span>
+                  </div>
                 </div>
-              ) : (
+              ) : state.modalidade_logistica === 'ENTREGA' ? (
                 <div>
                   <div className="text-stone-300">
                     Entrega em: {state.endereco.logradouro}, {state.endereco.numero} - {state.endereco.bairro} ({state.cidade})
                   </div>
+                  {state.data_entrega && (
+                    <div className="text-stone-300 text-xs mt-1 flex items-center gap-1.5 flex-wrap">
+                      <span className="text-stone-400">Previsão de entrega:</span>
+                      <strong className="text-amber-400 font-mono">
+                        {formatarDataBrasileira(state.data_entrega)}
+                        {state.hora_entrega ? ` às ${state.hora_entrega}` : ''}
+                      </strong>
+                    </div>
+                  )}
                   <div className="text-amber-300 font-semibold mt-0.5">
                     Frete: {state.frete.status === 'FIXADO' && state.frete.valor !== null ? formatarMoeda(state.frete.valor) : 'A confirmar com a equipe'}
+                  </div>
+                </div>
+              ) : (
+                <div>
+                  <div className="text-amber-400 font-medium">
+                    Modalidade não definida
+                  </div>
+                  <div className="text-stone-400 text-[11px] mt-0.5">
+                    Selecione entrega no local ou retirada na fábrica na Etapa 5.
                   </div>
                 </div>
               )}
@@ -193,10 +220,10 @@ export const Step6Review: React.FC<Step6ReviewProps> = ({
         </div>
       </div>
 
-      {/* Aviso de Privacidade */}
-      <div className="p-3 bg-stone-950 border border-stone-800 rounded-xl text-[11px] text-stone-400 flex items-center gap-2">
+      {/* Aviso de Confirmação */}
+      <div className="p-3 bg-gradient-to-r from-[#0c443c]/35 via-stone-950 to-stone-950 border border-[#0c443c]/50 rounded-xl text-[11px] text-stone-300 flex items-center gap-2 shadow-sm">
         <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0" />
-        <span>Confira com atenção se está tudo certo antes de gerar o orçamento!</span>
+        <span>Confira com atenção se está tudo certo antes de avançar para a identificação!</span>
       </div>
 
       {/* Ações */}
@@ -204,7 +231,7 @@ export const Step6Review: React.FC<Step6ReviewProps> = ({
         <button
           type="button"
           onClick={onBack}
-          className="px-5 py-2.5 rounded-xl border border-stone-800 hover:bg-stone-800 text-stone-300 text-xs font-medium transition"
+          className="px-5 py-2.5 rounded-xl border border-stone-800 hover:bg-stone-800 text-stone-300 text-xs font-medium transition cursor-pointer"
         >
           Voltar
         </button>
@@ -213,10 +240,10 @@ export const Step6Review: React.FC<Step6ReviewProps> = ({
           type="button"
           id="btn-gerar-orcamento"
           onClick={onConfirmReview}
-          className="inline-flex items-center gap-2 px-7 py-3 rounded-xl bg-gradient-to-r from-amber-600 to-amber-500 hover:from-amber-500 hover:to-amber-400 text-stone-950 font-bold text-xs transition shadow-lg shadow-amber-950"
+          className="inline-flex items-center gap-2 px-7 py-3 rounded-xl bg-gradient-to-r from-amber-600 to-amber-500 hover:from-amber-500 hover:to-amber-400 text-stone-950 font-bold text-xs transition shadow-lg shadow-amber-950 cursor-pointer"
         >
           <CheckSquare className="w-4 h-4" />
-          <span>Gerar Orçamento</span>
+          <span>Avançar para Identificação</span>
         </button>
       </div>
     </div>

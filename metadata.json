@@ -1,6 +1,6 @@
 {
   "name": "Albano's Chopp Calculator",
-  "description": "Calculadora oficial de chope para eventos da Cervejaria Albanos. Dimensionamento determinístico, seleção de mix de estilos, logística, frete e orçamento auditável integrado ao WhatsApp.",
+  "description": "Calcule a quantidade ideal de chopp Albanos para o seu evento, escolha seus estilos preferidos, frete para BH e receba sua cotação em minutos.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

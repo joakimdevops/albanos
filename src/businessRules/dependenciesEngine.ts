@@ -9,7 +9,10 @@ import { calcularOrcamento } from './budgetEngine';
 import { calcularDimensionamento, classificarCenarioBarris } from './dimensioningEngine';
 import { calcularFrete } from './freightEngine';
 import { sugerirMix, validarInvarianteMix } from './mixEngine';
-import { calcularDataDMenos1, obterHorarioPadraoRetirada } from './logisticsEngine';
+import {
+  calcularSugestaoDataLogistica,
+  obterHorarioSugeridoLogistica,
+} from './logisticsEngine';
 
 /**
  * Calcula a prioridade de atendimento com base na data do evento e na data atual do sistema.
@@ -95,13 +98,14 @@ export function aplicarMudancaEstado(
           );
           novoEstado.cenario_quantidade = classificacao.cenario;
         } else {
-          // Se ainda não escolheu, define sugestão inicial conforme cenário disponível
+          // Caso A: Existe cenário JUSTO -> pode ser pré-selecionado como recomendação comercial principal
           if (dim.cenarioJusto) {
             novoEstado.barris_total_escolhidos = dim.cenarioJusto.barris;
             novoEstado.cenario_quantidade = 'JUSTO';
-          } else if (dim.cenarioAbundante) {
-            novoEstado.barris_total_escolhidos = dim.cenarioAbundante.barris;
-            novoEstado.cenario_quantidade = 'ABUNDANTE';
+          } else {
+            // Caso B: Não existe JUSTO (apenas ENXUTO e ABUNDANTE) -> Nenhuma decisão automática; usuário deve escolher
+            novoEstado.barris_total_escolhidos = undefined;
+            novoEstado.cenario_quantidade = undefined;
           }
         }
       }
@@ -129,11 +133,6 @@ export function aplicarMudancaEstado(
         };
       }
 
-      // Chopeiras de referência: ceil(barris / 2)
-      if (novoEstado.precisa_chopeira) {
-        novoEstado.qtd_chopeiras_referencia = Math.ceil(barris / 2);
-      }
-
       sincronizarOrcamento(novoEstado);
       break;
     }
@@ -144,14 +143,29 @@ export function aplicarMudancaEstado(
       break;
     }
 
+    case 'evento_longo_ou_multiplos_dias': {
+      novoEstado.evento_longo_ou_multiplos_dias = Boolean(novoValor);
+      // Preserva dados preenchidos e não extrapola dimensionamento além de 12h
+      break;
+    }
+
     case 'cidade':
     case 'modalidade_logistica': {
       if (novoEstado.modalidade_logistica === 'RETIRADA_FABRICA') {
         if (!novoEstado.data_retirada && novoEstado.data_evento) {
-          novoEstado.data_retirada = calcularDataDMenos1(novoEstado.data_evento);
+          novoEstado.data_retirada = calcularSugestaoDataLogistica(novoEstado.data_evento);
         }
-        if (!novoEstado.hora_retirada) {
-          novoEstado.hora_retirada = obterHorarioPadraoRetirada(novoEstado.horario_inicio_evento);
+        if (!novoEstado.hora_retirada && novoEstado.horario_inicio_evento) {
+          const sugHora = obterHorarioSugeridoLogistica(novoEstado.horario_inicio_evento);
+          if (sugHora) novoEstado.hora_retirada = sugHora;
+        }
+      } else if (novoEstado.modalidade_logistica === 'ENTREGA') {
+        if (!novoEstado.data_entrega && novoEstado.data_evento) {
+          novoEstado.data_entrega = calcularSugestaoDataLogistica(novoEstado.data_evento);
+        }
+        if (!novoEstado.hora_entrega && novoEstado.horario_inicio_evento) {
+          const sugHora = obterHorarioSugeridoLogistica(novoEstado.horario_inicio_evento);
+          if (sugHora) novoEstado.hora_entrega = sugHora;
         }
       }
 
@@ -164,19 +178,17 @@ export function aplicarMudancaEstado(
       break;
     }
 
-    case 'precisa_chopeira': {
-      if (novoEstado.precisa_chopeira && novoEstado.barris_total_escolhidos) {
-        novoEstado.qtd_chopeiras_referencia = Math.ceil(novoEstado.barris_total_escolhidos / 2);
-      } else {
-        novoEstado.qtd_chopeiras_referencia = 0;
-      }
+    case 'precisa_chopeira':
+    case 'precisa_gas': {
+      // Solicitação registrada; quantidade e disponibilidade confirmadas pelo time humano
       break;
     }
 
     case 'forma_pagamento':
     case 'parcelas_cartao':
     case 'houve_barganha':
-    case 'cupom_desconto': {
+    case 'cupom_desconto':
+    case 'frete': {
       sincronizarOrcamento(novoEstado);
       break;
     }
@@ -224,7 +236,7 @@ function sincronizarOrcamento(estado: CalculatorState): void {
     barrisTotal: barris,
     mix: estado.mix,
     frete: estado.frete,
-    formaPagamento: estado.forma_pagamento === 'A_DEFINIR' ? 'PIX' : estado.forma_pagamento,
+    formaPagamento: estado.forma_pagamento,
     parcelasCartao: estado.parcelas_cartao,
     houveBarganha: estado.houve_barganha,
   });

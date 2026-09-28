@@ -9,6 +9,14 @@
   --color-albanos-gold-darker: #735e0c;
   --color-albanos-gold-deep: #473906;
 
+  /* Paleta Verde Oficial Albanos (#0c443c) - Cor Institucional Coadjuvante */
+  --color-albanos-green: #0c443c;
+  --color-albanos-green-light: #155e53;
+  --color-albanos-green-lighter: #208072;
+  --color-albanos-green-dark: #082d28;
+  --color-albanos-green-darker: #051e1a;
+  --color-albanos-green-deep: #031310;
+
   /* Harmonização da escala amber do Tailwind para a tonalidade exata da Cervejaria Albanos */
   --color-amber-50: #fdfcf5;
   --color-amber-100: #faf6e4;
@@ -34,6 +42,8 @@
 :root {
   --albanos-gold: #c1a01b;
   --albanos-gold-glow: rgba(193, 160, 27, 0.35);
+  --albanos-green: #0c443c;
+  --albanos-green-glow: rgba(12, 68, 60, 0.45);
 }
 
 html, body {

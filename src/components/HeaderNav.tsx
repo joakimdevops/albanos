@@ -84,7 +84,7 @@ export const HeaderNav: React.FC<HeaderNavProps> = ({
             <button
               type="button"
               onClick={onOpenWhatsAppHelp}
-              className="p-2 sm:p-2.5 rounded-xl bg-emerald-950/70 hover:bg-emerald-900/90 border border-emerald-500/60 hover:border-emerald-400 text-emerald-400 hover:text-emerald-300 transition-all duration-200 shadow-md shadow-emerald-950/60 hover:shadow-emerald-900/40 cursor-pointer active:scale-95 group flex items-center justify-center"
+              className="p-2 sm:p-2.5 rounded-xl bg-[#0c443c]/70 hover:bg-[#125e53]/90 border border-[#155e53]/80 hover:border-emerald-400 text-emerald-400 hover:text-emerald-300 transition-all duration-200 shadow-md shadow-[#0c443c]/40 hover:shadow-[#0c443c]/60 cursor-pointer active:scale-95 group flex items-center justify-center"
               title="Dúvidas? Fale conosco no WhatsApp!"
               aria-label="Dúvidas? Fale conosco no WhatsApp!"
             >

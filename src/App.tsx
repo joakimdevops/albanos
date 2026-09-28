@@ -8,7 +8,7 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { CalculatorState } from './types';
 import { ESTADO_INICIAL } from './businessRules/domainConfig';
 import { aplicarMudancaEstado } from './businessRules/dependenciesEngine';
-import { parsearParametrosUrl, aplicarParametrosUrlNoEstado } from './businessRules/urlAdapter';
+import { parsearParametrosUrl, importarParametrosURL } from './businessRules/urlAdapter';
 
 // Componentes da Interface
 import { HeaderNav } from './components/HeaderNav';
@@ -33,8 +33,8 @@ import { Step3Mix } from './components/steps/Step3Mix';
 import { Step4Equipment } from './components/steps/Step4Equipment';
 import { Step5Logistics } from './components/steps/Step5Logistics';
 import { Step6Review } from './components/steps/Step6Review';
-import { Step7Budget } from './components/steps/Step7Budget';
-import { Step8BasicContact } from './components/steps/Step8BasicContact';
+import { Step7LeadIdentification } from './components/steps/Step7LeadIdentification';
+import { Step8Budget } from './components/steps/Step8Budget';
 
 const TITULOS_ETAPAS: Record<number, string> = {
   0: 'Início',
@@ -43,9 +43,9 @@ const TITULOS_ETAPAS: Record<number, string> = {
   3: 'Portfólio & Mix de Chope',
   4: 'Equipamentos',
   5: 'Logística & Frete',
-  6: 'Revisão Pré-Orçamento',
-  7: 'Orçamento & Pagamento',
-  8: 'Contato',
+  6: 'Revisão Pré-Cotação',
+  7: 'Identificação',
+  8: 'Cotação & Pagamento',
 };
 
 export default function App() {
@@ -70,26 +70,30 @@ export default function App() {
   const [modalAuditoriaAberto, setModalAuditoriaAberto] = useState(false);
   const [modalConfirmarResetAberto, setModalConfirmarResetAberto] = useState(false);
 
-  // Hidratação via Parâmetros de URL (Pseudo-integração Iara / campanhas)
+  // Hidratação via Parâmetros de URL (Integração Iara / campanhas externas)
   useEffect(() => {
     try {
       if (typeof window !== 'undefined' && window.location.search) {
         const params = parsearParametrosUrl(window.location.search);
-        if (params && Object.keys(params).length > 0) {
-          setState((prev) => {
-            const hidratado = aplicarParametrosUrlNoEstado(prev, params);
-            // Se veio com dados suficientes de evento, podemos iniciar na etapa de evento
-            if (hidratado.qtd_adultos && hidratado.qtd_adultos > 0 && etapaAtual === 0) {
-              setEtapaAtual(1);
+        const hasParams =
+          params &&
+          (typeof params.size === 'number' ? params.size > 0 : Array.from(params.keys()).length > 0);
+
+        if (hasParams) {
+          const resultado = importarParametrosURL(params, sessaoInicial?.state ?? ESTADO_INICIAL);
+          if (resultado.sucesso) {
+            setState(resultado.novoEstado);
+            setEtapaAtual(resultado.primeiraEtapaPendente);
+            if (resultado.primeiraEtapaPendente > 0) {
+              setLoadingInicial(false);
             }
-            return hidratado;
-          });
+          }
         }
       }
     } catch (e) {
       console.warn('Erro ao processar parâmetros da URL:', e);
     }
-  }, []);
+  }, [sessaoInicial]);
 
   // Persistência contínua: grava automaticamente o progresso a cada alteração
   useEffect(() => {
@@ -126,6 +130,8 @@ export default function App() {
   const clickCountRef = useRef<number>(0);
 
   const handleFooterSecretAudit = (e: React.MouseEvent) => {
+    if (!import.meta.env.DEV) return;
+
     // Verificação nativa para múltiplos cliques no DOM (e.detail === 3)
     if (e.detail === 3) {
       setModalAuditoriaAberto(true);
@@ -185,13 +191,13 @@ export default function App() {
         <TulipaLoading onComplete={() => setLoadingInicial(false)} duracaoMs={6400} />
       )}
 
-      {/* Loading Lúdico da Tulipa ao avançar da Etapa 6 para a Etapa 7 (Geração do Orçamento Oficial) */}
+      {/* Loading Lúdico da Tulipa ao avançar da Etapa 6 para a Etapa 7 (Geração da Cotação) */}
       {loadingTransicaoOrcamento && (
         <TulipaLoading
-          titulo="Calculando orçamento..."
+          titulo="Calculando cotação..."
           subtitulo="Auditando parâmetros, estilos e regras comerciais Albanos..."
           duracaoMs={3800}
-          textoPular="Ver orçamento agora &rarr;"
+          textoPular="Ver cotação agora &rarr;"
           frases={[
             {
               id: 'dados',
@@ -221,12 +227,12 @@ export default function App() {
               id: 'finalizando',
               minPct: 85,
               maxPct: 100,
-              frase: 'Orçamento auditável pronto! Tim-tim! 🍻',
+              frase: 'Cotação auditável pronta! Tim-tim! 🍻',
             },
           ]}
           onComplete={() => {
             setLoadingTransicaoOrcamento(false);
-            setEtapaAtual(7);
+            setEtapaAtual(8);
             window.scrollTo({ top: 0, behavior: 'smooth' });
           }}
         />
@@ -314,9 +320,10 @@ export default function App() {
           <Step6Review
             state={state}
             onConfirmReview={() => {
-              // Confirma explicitamente a conferência pré-orçamento e ativa o loading lúdico da tulipa antes de exibir a Etapa 7
+              // Confirma explicitamente a conferência pré-orçamento e avança para a identificação do lead
               handleUpdateField('revisao_pre_orcamento_confirmada', true);
-              setLoadingTransicaoOrcamento(true);
+              setEtapaAtual(7);
+              window.scrollTo({ top: 0, behavior: 'smooth' });
             }}
             onGoToStep={(e) => handleGoToStep(e)}
             onBack={handleBack}
@@ -324,30 +331,29 @@ export default function App() {
         )}
 
         {etapaAtual === 7 && (
-          <Step7Budget
+          <Step7LeadIdentification
             state={state}
             onUpdateField={handleUpdateField}
-            onAcceptBudget={() => {
-              handleUpdateField('aceite_orcamento', 'SIM');
-              setEtapaAtual(8);
-              window.scrollTo({ top: 0, behavior: 'smooth' });
+            onNext={() => {
+              // Após preencher nome e telefone obrigatórios, ativa o loading de geração do orçamento
+              setLoadingTransicaoOrcamento(true);
             }}
-            onPreserveLeadWhatsApp={() => setModalPreservarLeadAberto(true)}
             onBack={handleBack}
           />
         )}
 
         {etapaAtual === 8 && (
-          <Step8BasicContact
+          <Step8Budget
             state={state}
             onUpdateField={handleUpdateField}
+            onGoToStep={(e) => handleGoToStep(e)}
             onBack={handleBack}
           />
         )}
       </main>
 
       {/* Footer Oficial com Detalhe do Logo Albanos */}
-      <footer className="py-6 border-t border-stone-800/80 bg-stone-950/90 text-stone-400 text-xs mt-auto">
+      <footer className="py-6 border-t border-[#0c443c]/40 bg-gradient-to-b from-stone-950 via-[#0c443c]/15 to-[#051e1a]/40 text-stone-400 text-xs mt-auto">
         <div className="max-w-4xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <img
@@ -392,10 +398,12 @@ export default function App() {
         stepTitle={TITULOS_ETAPAS[etapaAtual]}
       />
 
-      <EngineTestRunnerModal
-        isOpen={modalAuditoriaAberto}
-        onClose={() => setModalAuditoriaAberto(false)}
-      />
+      {import.meta.env.DEV && (
+        <EngineTestRunnerModal
+          isOpen={modalAuditoriaAberto}
+          onClose={() => setModalAuditoriaAberto(false)}
+        />
+      )}
 
       <ResetConfirmModal
         isOpen={modalConfirmarResetAberto}

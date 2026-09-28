@@ -4,7 +4,7 @@
  * Albano's Chopp Calculator — Tela T3 & T4: Dimensionamento e Cenários V1.1
  */
 
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   Beer,
   HelpCircle,
@@ -14,6 +14,7 @@ import {
   TrendingUp,
   Sparkles,
   Layers,
+  AlertCircle,
 } from 'lucide-react';
 import { CalculatorState, CenarioQuantidade } from '../../types';
 import { calcularDimensionamento } from '../../businessRules/dimensioningEngine';
@@ -34,6 +35,8 @@ export const Step2Dimensioning: React.FC<Step2DimensioningProps> = ({
   onNext,
   onBack,
 }) => {
+  const [erroSelecao, setErroSelecao] = useState<string | null>(null);
+
   const dimensionamento = useMemo(() => {
     if (
       state.qtd_adultos &&
@@ -52,17 +55,29 @@ export const Step2Dimensioning: React.FC<Step2DimensioningProps> = ({
   }, [state.qtd_adultos, state.duracao_horas, state.outras_bebidas_alcoolicas]);
 
   const litrosEstimados = dimensionamento?.litrosEstimados || state.litros_estimados || 0;
-  const barrisSelecionados = state.barris_total_escolhidos || dimensionamento?.cenariosDisponiveis[0]?.barris || 3;
+  const temEscolhaEfetiva = Boolean(state.barris_total_escolhidos && state.barris_total_escolhidos > 0);
+  const barrisSelecionados = state.barris_total_escolhidos || 0;
   const litrosComerciais = barrisSelecionados * BARRIL_VOLUME_LITROS;
 
   const handleSelecionarCenario = (cenario: CenarioQuantidade, barris: number) => {
+    setErroSelecao(null);
     onUpdateField('barris_total_escolhidos', barris);
     onUpdateField('cenario_quantidade', cenario);
   };
 
   const handleAlterarBarris = (delta: number) => {
-    const novoTotal = Math.max(1, barrisSelecionados + delta);
+    setErroSelecao(null);
+    const base = state.barris_total_escolhidos || (dimensionamento?.cenariosDisponiveis[0]?.barris ?? 1);
+    const novoTotal = Math.max(1, base + delta);
     onUpdateField('barris_total_escolhidos', novoTotal);
+  };
+
+  const handleAvancarParaMix = () => {
+    if (!temEscolhaEfetiva) {
+      setErroSelecao('Por favor, selecione um dos cenários comerciais acima para definir a quantidade de barris.');
+      return;
+    }
+    onNext();
   };
 
   return (
@@ -76,9 +91,23 @@ export const Step2Dimensioning: React.FC<Step2DimensioningProps> = ({
           Recomendação de Chope Albanos
         </h2>
         <p className="text-xs text-stone-400">
-          Cálculo sob medida para {state.qtd_adultos} adultos durante {state.duracao_horas}h.
+          {state.evento_longo_ou_multiplos_dias
+            ? `Cálculo referencial para ${state.qtd_adultos} adultos (evento > 12h ou múltiplos dias).`
+            : `Cálculo sob medida para ${state.qtd_adultos} adultos durante ${state.duracao_horas}h.`}
         </p>
       </div>
+
+      {state.evento_longo_ou_multiplos_dias && (
+        <div className="p-3.5 bg-amber-950/30 border border-amber-500/40 rounded-xl text-xs text-amber-200/90 flex items-start gap-2.5">
+          <AlertCircle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+          <div className="space-y-0.5 leading-relaxed">
+            <strong className="text-amber-300 block">Evento com mais de 12 horas ou em múltiplos dias</strong>
+            <span>
+              Para eventos de longa duração, não extrapolamos o consumo matematicamente. O dimensionamento abaixo serve como ponto de partida referencial e será ajustado pelo nosso time comercial no WhatsApp.
+            </span>
+          </div>
+        </div>
+      )}
 
       {/* Card de Referência Matemática */}
       <div className="p-5 rounded-2xl bg-gradient-to-b from-stone-900 to-stone-950 border border-stone-800 shadow-xl space-y-4">
@@ -117,7 +146,11 @@ export const Step2Dimensioning: React.FC<Step2DimensioningProps> = ({
 
         <div className="grid grid-cols-1 gap-3">
           {dimensionamento?.cenariosDisponiveis.map((cen) => {
-            const isSelecionado = state.barris_total_escolhidos === cen.barris;
+            const isSelecionado = Boolean(
+              state.barris_total_escolhidos &&
+              state.barris_total_escolhidos === cen.barris &&
+              (state.cenario_quantidade ? state.cenario_quantidade === cen.cenario : true)
+            );
             const ehJusto = cen.cenario === 'JUSTO';
             const ehEnxuto = cen.cenario === 'ENXUTO';
 
@@ -126,7 +159,7 @@ export const Step2Dimensioning: React.FC<Step2DimensioningProps> = ({
                 key={cen.cenario}
                 type="button"
                 onClick={() => handleSelecionarCenario(cen.cenario, cen.barris)}
-                className={`p-4 rounded-xl border text-left transition relative ${
+                className={`p-4 rounded-xl border text-left transition relative cursor-pointer ${
                   isSelecionado
                     ? 'bg-amber-950/40 border-amber-500 ring-1 ring-amber-500 text-white'
                     : 'bg-stone-950/70 border-stone-800 hover:border-stone-700 text-stone-300'
@@ -188,6 +221,20 @@ export const Step2Dimensioning: React.FC<Step2DimensioningProps> = ({
             );
           })}
         </div>
+
+        {!temEscolhaEfetiva && (
+          <div className="p-3 bg-amber-950/30 border border-amber-600/40 rounded-xl text-xs text-amber-300 flex items-center gap-2">
+            <Sparkles className="w-4 h-4 text-amber-400 shrink-0" />
+            <span>Por favor, escolha uma das opções acima (Enxuto ou Abundante) para definir a quantidade.</span>
+          </div>
+        )}
+
+        {erroSelecao && (
+          <div className="p-3 bg-rose-950/40 border border-rose-600/50 rounded-xl text-xs text-rose-200 flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
+            <span>{erroSelecao}</span>
+          </div>
+        )}
       </div>
 
       {/* Ajuste Fino de Barris */}
@@ -197,7 +244,9 @@ export const Step2Dimensioning: React.FC<Step2DimensioningProps> = ({
             Ajustar quantidade total de barris
           </span>
           <span className="text-[11px] text-stone-400">
-            Total selecionado: {barrisSelecionados} barris ({litrosComerciais} L)
+            {temEscolhaEfetiva
+              ? `Total selecionado: ${barrisSelecionados} barris (${litrosComerciais} L)`
+              : 'Selecione um cenário acima para habilitar o ajuste manual'}
           </span>
         </div>
 
@@ -205,18 +254,19 @@ export const Step2Dimensioning: React.FC<Step2DimensioningProps> = ({
           <button
             type="button"
             onClick={() => handleAlterarBarris(-1)}
-            disabled={barrisSelecionados <= 1}
-            className="w-8 h-8 rounded-lg bg-stone-900 border border-stone-700 disabled:opacity-30 text-stone-200 font-bold hover:bg-stone-800 transition flex items-center justify-center"
+            disabled={!temEscolhaEfetiva || barrisSelecionados <= 1}
+            className="w-8 h-8 rounded-lg bg-stone-900 border border-stone-700 disabled:opacity-30 text-stone-200 font-bold hover:bg-stone-800 transition flex items-center justify-center cursor-pointer disabled:cursor-not-allowed"
           >
             -
           </button>
           <span className="w-8 text-center font-mono font-bold text-sm text-amber-400">
-            {barrisSelecionados}
+            {temEscolhaEfetiva ? barrisSelecionados : '-'}
           </span>
           <button
             type="button"
             onClick={() => handleAlterarBarris(1)}
-            className="w-8 h-8 rounded-lg bg-stone-900 border border-stone-700 text-stone-200 font-bold hover:bg-stone-800 transition flex items-center justify-center"
+            disabled={!temEscolhaEfetiva}
+            className="w-8 h-8 rounded-lg bg-stone-900 border border-stone-700 disabled:opacity-30 text-stone-200 font-bold hover:bg-stone-800 transition flex items-center justify-center cursor-pointer disabled:cursor-not-allowed"
           >
             +
           </button>
@@ -228,7 +278,7 @@ export const Step2Dimensioning: React.FC<Step2DimensioningProps> = ({
         <button
           type="button"
           onClick={onBack}
-          className="px-5 py-2.5 rounded-xl border border-stone-800 hover:bg-stone-800 text-stone-300 text-xs font-medium transition"
+          className="px-5 py-2.5 rounded-xl border border-stone-800 hover:bg-stone-800 text-stone-300 text-xs font-medium transition cursor-pointer"
         >
           Voltar
         </button>
@@ -236,8 +286,12 @@ export const Step2Dimensioning: React.FC<Step2DimensioningProps> = ({
         <button
           type="button"
           id="btn-avancar-mix"
-          onClick={onNext}
-          className="inline-flex items-center gap-2 px-6 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-500 text-stone-950 font-bold text-xs transition shadow-lg shadow-amber-950"
+          onClick={handleAvancarParaMix}
+          className={`inline-flex items-center gap-2 px-6 py-2.5 rounded-xl font-bold text-xs transition shadow-lg ${
+            temEscolhaEfetiva
+              ? 'bg-amber-600 hover:bg-amber-500 text-stone-950 shadow-amber-950 cursor-pointer active:scale-95'
+              : 'bg-stone-800 text-stone-400 border border-stone-700 cursor-not-allowed opacity-80'
+          }`}
         >
           <span>Escolher Estilos de Chope</span>
           <ArrowRight className="w-4 h-4" />

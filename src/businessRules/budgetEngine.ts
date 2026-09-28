@@ -45,10 +45,11 @@ export function formatarMoeda(valor: number): string {
  * 2. Cálculo dos subtotais por estilo
  * 3. Soma dos produtos
  * 4. Verificação independente de soma
- * 5. Aplicação de desconto de barganha autorizado (5% só para PIX/DINHEIRO, somente sobre produtos)
- * 6. Aplicação de multiplicador de cartão (somente sobre produtos)
- * 7. Soma do frete (sem desconto, sem juros)
- * 8. Checagem final de consistência
+ * 5. Determinação da Base Financeira (BASE = TOTAL_PRODUTOS + FRETE se frete conhecido)
+ * 6. Aplicação de desconto de barganha/cupom de 5% sobre BASE (PIX)
+ * 7. Aplicação de multiplicador de cartão sobre BASE (CARTAO), com parcelas = total / numParcelas
+ * 8. Tratamento seguro para frete a confirmar (demonstração sobre valores conhecidos sem fechar total)
+ * 9. Checagem final de consistência
  */
 export function calcularOrcamento(
   params: ParametrosOrcamento
@@ -58,7 +59,7 @@ export function calcularOrcamento(
     mix,
     frete,
     formaPagamento,
-    parcelasCartao = 1,
+    parcelasCartao,
     houveBarganha,
   } = params;
 
@@ -69,6 +70,7 @@ export function calcularOrcamento(
       litrosComerciais: 0,
       itens: [],
       totalProdutosBruto: 0,
+      baseFinanceira: 0,
       descontoBarganhaValor: 0,
       descontoAplicado: false,
       totalProdutosLiquido: 0,
@@ -89,6 +91,7 @@ export function calcularOrcamento(
       litrosComerciais: barrisTotal * BARRIL_VOLUME_LITROS,
       itens: [],
       totalProdutosBruto: 0,
+      baseFinanceira: 0,
       descontoBarganhaValor: 0,
       descontoAplicado: false,
       totalProdutosLiquido: 0,
@@ -166,41 +169,86 @@ export function calcularOrcamento(
     throw new Error('Falha de integridade na soma cruzada de produtos.');
   }
 
-  // Desconto de barganha (5% só para PIX ou DINHEIRO, apenas sobre produtos)
+  // Identificação do status do frete
+  const freteConhecido = frete.status !== 'A_CONFIRMAR' && frete.valor !== null;
+  const freteValor = freteConhecido ? frete.valor! : 0;
+
+  // Nova regra: quando o frete for conhecido, BASE = TOTAL_PRODUTOS + FRETE
+  // Quando o frete for A_CONFIRMAR, a base conhecida para demonstração são apenas os produtos
+  const baseFinanceira = freteConhecido
+    ? Number((totalProdutosBruto + freteValor).toFixed(2))
+    : totalProdutosBruto;
+
   let descontoBarganhaValor = 0;
   let descontoAplicado = false;
-  if (houveBarganha && (formaPagamento === 'PIX' || formaPagamento === 'DINHEIRO')) {
-    descontoBarganhaValor = Number(
-      (totalProdutosBruto * ALCADA_DESCONTO_BARGANHA_PERCENTUAL).toFixed(2)
-    );
-    descontoAplicado = true;
-  }
-
-  let totalProdutosLiquido = Number(
-    (totalProdutosBruto - descontoBarganhaValor).toFixed(2)
-  );
-
-  // Regra de cartão de crédito
   let multiplicadorCartao: number | undefined;
   let valorParcelaCartao: number | undefined;
-  if (formaPagamento === 'CARTAO') {
-    const numParcelas = Math.min(Math.max(parcelasCartao, 1), 12);
-    multiplicadorCartao = MULTIPLICADORES_CARTAO[numParcelas] || 1.0;
-    // Multiplicador incide apenas sobre produtos
-    totalProdutosLiquido = Number((totalProdutosBruto * multiplicadorCartao).toFixed(2));
-    valorParcelaCartao = Number((totalProdutosLiquido / numParcelas).toFixed(2));
-  }
-
-  // Frete é somado após qualquer condição de produtos (frete nunca recebe desconto nem juros)
+  let totalProdutosLiquido = totalProdutosBruto;
   let totalGeral: number | null = null;
   let totalGeralFormatado = '';
 
-  if (frete.status === 'A_CONFIRMAR' || frete.valor === null) {
-    totalGeral = null;
-    totalGeralFormatado = `${formatarMoeda(totalProdutosLiquido)} + Frete a confirmar`;
+  if (formaPagamento === 'CARTAO') {
+    if (!parcelasCartao || parcelasCartao < 1 || parcelasCartao > 12) {
+      // Cartão sem parcelas definidas ainda: não presume 1x
+      multiplicadorCartao = undefined;
+      valorParcelaCartao = undefined;
+      totalGeral = null;
+      totalGeralFormatado = 'Selecione as parcelas';
+      totalProdutosLiquido = totalProdutosBruto;
+    } else {
+      const numParcelas = Math.min(Math.max(parcelasCartao, 1), 12);
+      multiplicadorCartao = MULTIPLICADORES_CARTAO[numParcelas] || 1.0;
+
+      if (freteConhecido) {
+        // Cartão com frete conhecido: multiplicador incide sobre a base completa (produtos + frete)
+        totalGeral = Number((baseFinanceira * multiplicadorCartao).toFixed(2));
+        valorParcelaCartao = Number((totalGeral / numParcelas).toFixed(2));
+        totalGeralFormatado = formatarMoeda(totalGeral);
+        totalProdutosLiquido = Number((totalProdutosBruto * multiplicadorCartao).toFixed(2));
+      } else {
+        // Cartão com frete a confirmar: demonstra condição sobre produtos sem fechar total definitivo
+        const produtosAjustados = Number((totalProdutosBruto * multiplicadorCartao).toFixed(2));
+        totalProdutosLiquido = produtosAjustados;
+        valorParcelaCartao = Number((produtosAjustados / numParcelas).toFixed(2));
+        totalGeral = null;
+        totalGeralFormatado = `${formatarMoeda(produtosAjustados)} + Frete a confirmar`;
+      }
+    }
+  } else if (houveBarganha && formaPagamento === 'PIX') {
+    // PIX com cupom/barganha (5% de desconto aplicável exclusivamente a PIX)
+    descontoAplicado = true;
+    if (freteConhecido) {
+      // 5% incide sobre a base completa (produtos + frete)
+      descontoBarganhaValor = Number(
+        (baseFinanceira * ALCADA_DESCONTO_BARGANHA_PERCENTUAL).toFixed(2)
+      );
+      totalGeral = Number((baseFinanceira - descontoBarganhaValor).toFixed(2));
+      totalGeralFormatado = formatarMoeda(totalGeral);
+      totalProdutosLiquido = Number(
+        (totalProdutosBruto * (1 - ALCADA_DESCONTO_BARGANHA_PERCENTUAL)).toFixed(2)
+      );
+    } else {
+      // Frete a confirmar: demonstra desconto de 5% sobre produtos conhecidos
+      descontoBarganhaValor = Number(
+        (totalProdutosBruto * ALCADA_DESCONTO_BARGANHA_PERCENTUAL).toFixed(2)
+      );
+      totalProdutosLiquido = Number(
+        (totalProdutosBruto - descontoBarganhaValor).toFixed(2)
+      );
+      totalGeral = null;
+      totalGeralFormatado = `${formatarMoeda(totalProdutosLiquido)} + Frete a confirmar`;
+    }
   } else {
-    totalGeral = Number((totalProdutosLiquido + frete.valor).toFixed(2));
-    totalGeralFormatado = formatarMoeda(totalGeral);
+    // PIX sem barganha ou A_DEFINIR (condição financeiramente neutra)
+    if (freteConhecido) {
+      totalGeral = baseFinanceira;
+      totalGeralFormatado = formatarMoeda(totalGeral);
+      totalProdutosLiquido = totalProdutosBruto;
+    } else {
+      totalGeral = null;
+      totalGeralFormatado = `${formatarMoeda(totalProdutosBruto)} + Frete a confirmar`;
+      totalProdutosLiquido = totalProdutosBruto;
+    }
   }
 
   return {
@@ -208,6 +256,7 @@ export function calcularOrcamento(
     litrosComerciais: barrisTotal * BARRIL_VOLUME_LITROS,
     itens,
     totalProdutosBruto,
+    baseFinanceira,
     descontoBarganhaValor,
     descontoAplicado,
     totalProdutosLiquido,

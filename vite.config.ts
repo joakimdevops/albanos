@@ -1,14 +1,46 @@
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import path from 'path';
-import {defineConfig} from 'vite';
+import { defineConfig, Plugin } from 'vite';
 
-export default defineConfig(() => {
+/**
+ * Plugin para isolar ferramentas e modais de teste/diagnóstico exclusivamente
+ * no ambiente de desenvolvimento, garantindo zero impacto no bundle de produção.
+ */
+function devOnlyDiagnosticsPlugin(isProduction: boolean): Plugin {
+  const virtualModuleId = 'virtual:dev-only-empty-test-modal';
+  const resolvedVirtualModuleId = '\0' + virtualModuleId;
+
   return {
-    plugins: [react(), tailwindcss()],
+    name: 'vite-dev-only-diagnostics',
+    enforce: 'pre',
+    resolveId(id) {
+      if (isProduction && id.includes('EngineTestRunnerModal')) {
+        return resolvedVirtualModuleId;
+      }
+      return null;
+    },
+    load(id) {
+      if (id === resolvedVirtualModuleId) {
+        return 'export const EngineTestRunnerModal = () => null;\nexport default EngineTestRunnerModal;';
+      }
+      return null;
+    },
+  };
+}
+
+export default defineConfig(({ command }) => {
+  const isProduction = command === 'build';
+
+  return {
+    plugins: [
+      devOnlyDiagnosticsPlugin(isProduction),
+      react(),
+      tailwindcss(),
+    ],
     resolve: {
       alias: {
-        '@': path.resolve(__dirname, '.'),
+        '@': path.resolve(import.meta.dirname || '.', '.'),
       },
     },
     server: {

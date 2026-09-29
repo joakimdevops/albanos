@@ -104,7 +104,7 @@ export const Step4Equipment: React.FC<Step4EquipmentProps> = ({
                   Chopeira elétrica Albanos solicitada
                 </span>
                 <span className="text-[11px] text-stone-400 block mt-0.5">
-                  Disponibilidade e voltagem serão confirmadas pela equipe comercial.
+                  Disponibilidade e voltagem serão confirmadas pelo Time Comercial Albanos.
                 </span>
               </div>
               <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-amber-950 border border-amber-800/60 text-amber-400 shrink-0 self-start">

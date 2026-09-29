@@ -8,6 +8,14 @@ import React, { useState, useEffect } from 'react';
 import { Calendar, MapPin, Users, Clock, Wine, ArrowRight, AlertCircle } from 'lucide-react';
 import { CalculatorState, OutrasBebidas } from '../../types';
 import { MUNICIPIOS_COLAR_METROPOLITANO, MUNICIPIOS_RMBH } from '../../businessRules/domainConfig';
+import { obterDataHojeIso } from '../../businessRules/logisticsEngine';
+import {
+  validarDataEvento,
+  validarHorarioInicio,
+  validarQtdAdultos,
+  validarQtdPessoas,
+  validarDuracaoHoras,
+} from '../../businessRules/validators';
 
 interface Step1EventProps {
   state: CalculatorState;
@@ -25,7 +33,7 @@ export const Step1Event: React.FC<Step1EventProps> = ({
   const [erro, setErro] = useState<string | null>(null);
   const [campoComErro, setCampoComErro] = useState<string | null>(null);
 
-  const hojeStr = new Date().toISOString().split('T')[0];
+  const hojeStr = obterDataHojeIso();
 
   const dispararErro = (mensagem: string, idCampo: string, idElementoFoco?: string) => {
     setErro(mensagem);
@@ -62,12 +70,16 @@ export const Step1Event: React.FC<Step1EventProps> = ({
       dispararErro('Por favor, selecione a data do evento.', 'data_evento', 'input-data-evento');
       return;
     }
-    if (state.data_evento < hojeStr) {
-      dispararErro('A data do evento não pode estar no passado.', 'data_evento', 'input-data-evento');
+    if (!validarDataEvento(state.data_evento, hojeStr)) {
+      dispararErro('A data do evento é inválida ou não pode estar no passado.', 'data_evento', 'input-data-evento');
       return;
     }
     if (!state.horario_inicio_evento || !state.horario_inicio_evento.trim()) {
       dispararErro('Por favor, informe o horário de início do evento.', 'horario_inicio_evento', 'input-horario-inicio');
+      return;
+    }
+    if (!validarHorarioInicio(state.horario_inicio_evento)) {
+      dispararErro('Por favor, informe um horário válido de início do evento (formato HH:mm).', 'horario_inicio_evento', 'input-horario-inicio');
       return;
     }
     if (!state.cidade || !state.cidade.trim()) {
@@ -78,21 +90,16 @@ export const Step1Event: React.FC<Step1EventProps> = ({
       }
       return;
     }
-    if (!state.qtd_adultos || state.qtd_adultos <= 0) {
-      dispararErro('Informe pelo menos 1 adulto consumidor.', 'qtd_adultos', 'input-qtd-adultos');
+    if (!validarQtdAdultos(state.qtd_adultos)) {
+      dispararErro('Informe pelo menos 1 adulto consumidor (número inteiro).', 'qtd_adultos', 'input-qtd-adultos');
       return;
     }
-    if (state.qtd_pessoas && state.qtd_adultos > state.qtd_pessoas) {
-      dispararErro('A quantidade de adultos não pode ser maior que o total de pessoas.', 'qtd_adultos', 'input-qtd-adultos');
+    if (!validarQtdPessoas(state.qtd_pessoas, state.qtd_adultos)) {
+      dispararErro('A quantidade total de pessoas deve ser um número inteiro maior ou igual ao de adultos.', 'qtd_adultos', 'input-qtd-adultos');
       return;
     }
     if (!state.evento_longo_ou_multiplos_dias) {
-      if (
-        !state.duracao_horas ||
-        !Number.isInteger(state.duracao_horas) ||
-        state.duracao_horas <= 0 ||
-        state.duracao_horas > 12
-      ) {
+      if (!validarDuracaoHoras(state.duracao_horas)) {
         dispararErro(
           'Por favor, confirme a duração do seu evento (de 1 a 12 horas inteiras).',
           'duracao_horas',
@@ -100,8 +107,6 @@ export const Step1Event: React.FC<Step1EventProps> = ({
         );
         return;
       }
-    } else if (!state.duracao_horas) {
-      handleAtualizarCampo('duracao_horas', 12);
     }
     if (!state.outras_bebidas_alcoolicas) {
       dispararErro('Informe se haverá outras bebidas alcoólicas no evento.', 'outras_bebidas_alcoolicas', 'btn-outras-nao');
@@ -327,7 +332,7 @@ export const Step1Event: React.FC<Step1EventProps> = ({
                 className="w-full bg-stone-900 border border-amber-600/50 focus:border-amber-400 focus:ring-1 focus:ring-amber-400 rounded-lg px-3.5 py-2.5 text-sm text-white placeholder-stone-500 outline-none transition"
               />
               <p className="text-[11px] text-stone-400 leading-relaxed">
-                💡 Para cidades fora da rota padrão da Grande BH, a viabilidade de entrega e o frete serão calculados pela equipe comercial via WhatsApp.
+                💡 Para cidades fora da rota padrão da Grande BH, a viabilidade de entrega e o frete serão confirmados pelo Time Comercial Albanos via WhatsApp.
               </p>
             </div>
           )}
@@ -393,40 +398,49 @@ export const Step1Event: React.FC<Step1EventProps> = ({
               Duração do Evento <span className="text-rose-400">*</span>
             </label>
             <span className="text-sm font-bold font-mono text-amber-400">
-              {state.duracao_horas ? `${state.duracao_horas} horas` : '4 horas (sugestão)'}
+              {state.evento_longo_ou_multiplos_dias
+                ? 'Evento Especial (> 12h)'
+                : state.duracao_horas
+                ? `${state.duracao_horas} horas`
+                : 'Selecione a duração'}
             </span>
           </div>
 
-          <input
-            id="input-duracao"
-            type="range"
-            min="1"
-            max="12"
-            step="1"
-            value={state.duracao_horas || 4}
-            onChange={(e) => handleAtualizarCampo('duracao_horas', parseInt(e.target.value, 10))}
-            className="w-full accent-amber-500 bg-stone-800 h-2 rounded-lg cursor-pointer"
-          />
+          {/* Seletor normal de 1 a 12 horas (desabilitado se evento especial estiver ativo) */}
+          <div className={`space-y-3 transition-opacity ${state.evento_longo_ou_multiplos_dias ? 'opacity-30 pointer-events-none' : 'opacity-100'}`}>
+            <input
+              id="input-duracao"
+              type="range"
+              min="1"
+              max="12"
+              step="1"
+              disabled={Boolean(state.evento_longo_ou_multiplos_dias)}
+              value={state.duracao_horas || 4}
+              onChange={(e) => handleAtualizarCampo('duracao_horas', parseInt(e.target.value, 10))}
+              className="w-full accent-amber-500 bg-stone-800 h-2 rounded-lg cursor-pointer"
+            />
 
-          {/* Botões rápidos de duração: 2h, 4h, 6h, 8h, 12h */}
-          <div className="flex justify-between text-xs gap-1 pt-1">
-            {[2, 4, 6, 8, 12].map((h) => (
-              <button
-                key={h}
-                type="button"
-                onClick={() => handleAtualizarCampo('duracao_horas', h)}
-                className={`flex-1 py-1.5 rounded-md border text-center transition ${
-                  state.duracao_horas === h
-                    ? 'bg-amber-500/20 border-amber-500 text-amber-300 font-bold'
-                    : 'bg-stone-900 border-stone-800 text-stone-400 hover:text-stone-200 hover:bg-stone-800'
-                }`}
-              >
-                {h}h
-              </button>
-            ))}
+            {/* Botões rápidos de duração: 2h, 4h, 6h, 8h, 12h */}
+            <div className="flex justify-between text-xs gap-1 pt-1">
+              {[2, 4, 6, 8, 12].map((h) => (
+                <button
+                  key={h}
+                  type="button"
+                  disabled={Boolean(state.evento_longo_ou_multiplos_dias)}
+                  onClick={() => handleAtualizarCampo('duracao_horas', h)}
+                  className={`flex-1 py-1.5 rounded-md border text-center transition ${
+                    !state.evento_longo_ou_multiplos_dias && state.duracao_horas === h
+                      ? 'bg-amber-500/20 border-amber-500 text-amber-300 font-bold'
+                      : 'bg-stone-900 border-stone-800 text-stone-400 hover:text-stone-200 hover:bg-stone-800'
+                  }`}
+                >
+                  {h}h
+                </button>
+              ))}
+            </div>
           </div>
 
-          {/* Opção para Eventos com mais de 12h ou em múltiplos dias */}
+          {/* Opção para Eventos com mais de 12h ou em múltiplos dias (mutuamente exclusivo) */}
           <div className="pt-2 border-t border-stone-800/80">
             <button
               type="button"
@@ -434,9 +448,6 @@ export const Step1Event: React.FC<Step1EventProps> = ({
               onClick={() => {
                 const novoValor = !state.evento_longo_ou_multiplos_dias;
                 handleAtualizarCampo('evento_longo_ou_multiplos_dias', novoValor);
-                if (novoValor && !state.duracao_horas) {
-                  handleAtualizarCampo('duracao_horas', 12);
-                }
               }}
               className={`w-full p-3 rounded-xl border text-left flex items-start gap-3 transition cursor-pointer ${
                 state.evento_longo_ou_multiplos_dias
@@ -455,7 +466,7 @@ export const Step1Event: React.FC<Step1EventProps> = ({
                   Evento com mais de 12 horas ou em múltiplos dias
                 </span>
                 <span className="text-[11px] text-stone-400 block leading-relaxed">
-                  Para eventos de longa duração ou múltiplos dias, não extrapolamos fórmulas automáticas. Seus dados serão preservados e o dimensionamento será refinado diretamente com a equipe comercial no WhatsApp.
+                  Para eventos de longa duração ou múltiplos dias, não extrapolamos fórmulas automáticas. Seus dados serão preservados e o dimensionamento será tratado diretamente com o Time Comercial Albanos.
                 </span>
               </div>
             </button>

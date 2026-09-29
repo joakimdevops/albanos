@@ -19,6 +19,8 @@ import {
 import { CalculatorState, CenarioQuantidade } from '../../types';
 import { calcularDimensionamento } from '../../businessRules/dimensioningEngine';
 import { BARRIL_VOLUME_LITROS } from '../../businessRules/domainConfig';
+import { gerarLinkWhatsApp } from '../../businessRules/whatsappAdapter';
+import { formatarDataBrasileira } from '../../businessRules/logisticsEngine';
 
 interface Step2DimensioningProps {
   state: CalculatorState;
@@ -36,6 +38,104 @@ export const Step2Dimensioning: React.FC<Step2DimensioningProps> = ({
   onBack,
 }) => {
   const [erroSelecao, setErroSelecao] = useState<string | null>(null);
+
+  // Ramo Especial: Eventos com mais de 12 horas ou múltiplos dias
+  if (state.evento_longo_ou_multiplos_dias) {
+    return (
+      <div id="step-dimensionamento-especial" className="max-w-xl mx-auto space-y-6 py-4 px-4">
+        {/* Header */}
+        <div className="space-y-1">
+          <span className="text-xs font-semibold text-amber-400 uppercase tracking-wider">
+            Etapa 2 de 8 • Dimensionamento Sob Medida
+          </span>
+          <h2 className="text-2xl font-bold text-white font-['Raleway',sans-serif]">
+            Atendimento Personalizado
+          </h2>
+          <p className="text-xs text-stone-400">
+            Evento com mais de 12 horas ou em múltiplos dias
+          </p>
+        </div>
+
+        {/* Box Explicativo */}
+        <div className="p-5 rounded-2xl bg-gradient-to-b from-stone-900 to-stone-950 border border-amber-500/40 shadow-xl space-y-4">
+          <div className="flex items-start gap-3">
+            <div className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-400 shrink-0">
+              <Sparkles className="w-5 h-5" />
+            </div>
+            <div className="space-y-1.5 leading-relaxed">
+              <h3 className="text-sm font-bold text-amber-300">
+                Dimensionamento Exclusivo pelo Time Comercial Albanos
+              </h3>
+              <p className="text-xs text-stone-300">
+                Para eventos de longa duração ou realizados em múltiplos dias, a Cervejaria Albanos não aplica uma fórmula linear automática. Cada comemoração possui particularidades operacionais de fluxo de convidados, reposição e conservação do chope.
+              </p>
+              <p className="text-xs text-stone-400">
+                O Time Comercial Albanos fará uma consultoria dedicada para estimar a quantidade recomendada de barris e a estrutura ideal para a sua ocasião.
+              </p>
+            </div>
+          </div>
+
+          {/* Resumo dos dados informados */}
+          <div className="p-3.5 bg-stone-950/70 border border-stone-800 rounded-xl space-y-2 text-xs">
+            <span className="text-stone-400 font-semibold uppercase tracking-wider text-[10px] block">
+              Dados do seu evento:
+            </span>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-stone-300">
+              <div>
+                <span className="text-stone-500 block text-[10px]">Data do evento:</span>
+                <span className="font-medium text-white">
+                  {state.data_evento ? formatarDataBrasileira(state.data_evento) : 'A definir'}
+                </span>
+              </div>
+              <div>
+                <span className="text-stone-500 block text-[10px]">Horário de início:</span>
+                <span className="font-medium text-white">{state.horario_inicio_evento || 'A definir'}</span>
+              </div>
+              <div>
+                <span className="text-stone-500 block text-[10px]">Cidade:</span>
+                <span className="font-medium text-white">{state.cidade || 'A definir'}</span>
+              </div>
+              <div>
+                <span className="text-stone-500 block text-[10px]">Público:</span>
+                <span className="font-medium text-white">
+                  {state.qtd_pessoas || state.qtd_adultos} pessoas ({state.qtd_adultos} adultos)
+                </span>
+              </div>
+              <div className="sm:col-span-2">
+                <span className="text-stone-500 block text-[10px]">Bebidas no evento:</span>
+                <span className="font-medium text-white">
+                  {state.outras_bebidas_alcoolicas === 'SIM'
+                    ? 'Haverá outras bebidas alcoólicas'
+                    : 'Apenas chope Albanos'}
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Ações de Continuidade: WhatsApp e Editar dados */}
+        <div className="space-y-3 pt-2">
+          <a
+            href={gerarLinkWhatsApp(state, 'preventivo', undefined, 2, 'Dimensionamento')}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="w-full py-3.5 px-4 rounded-xl bg-[#0c443c] hover:bg-[#125e53] text-white font-bold text-sm flex items-center justify-center gap-2.5 transition shadow-lg shadow-[#0c443c]/30 active:scale-[0.99] border border-[#155e53]"
+          >
+            <Beer className="w-4 h-4 text-emerald-300" />
+            <span>Falar com Time Comercial no WhatsApp</span>
+          </a>
+
+          <button
+            type="button"
+            onClick={onBack}
+            className="w-full py-3 px-4 rounded-xl bg-stone-900 hover:bg-stone-800 text-stone-300 font-medium text-xs flex items-center justify-center gap-2 transition border border-stone-800"
+          >
+            <span>Revisar ou alterar dados do evento na Etapa 1</span>
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   const dimensionamento = useMemo(() => {
     if (
@@ -134,7 +234,7 @@ export const Step2Dimensioning: React.FC<Step2DimensioningProps> = ({
         </div>
 
         <div className="text-[11px] text-stone-400 bg-stone-950/60 p-3 rounded-xl border border-stone-800/80 leading-relaxed">
-          💡 Os barris oficiais Albanos são comercializados em unidades de <strong>50 Litros</strong>. Veja abaixo as opções comerciais recomendadas.
+          💡 Na calculadora de eventos, o dimensionamento é realizado em barris de <strong>50 Litros</strong>. Veja abaixo as opções comerciais recomendadas.
         </div>
       </div>
 

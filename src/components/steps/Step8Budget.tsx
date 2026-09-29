@@ -76,18 +76,17 @@ export const Step8Budget: React.FC<Step8BudgetProps> = ({
   }, [orcamento, state.orcamento, onUpdateField]);
 
   const [erroPagamento, setErroPagamento] = useState<string | null>(null);
-  const [pedidoConfirmado, setPedidoConfirmado] = useState(false);
+  // Estado visual de confirmação deriva estritamente do aceite real do estado (6.3.3)
+  const pedidoConfirmado = state.aceite_orcamento === 'SIM';
 
   const handleFormaPagamento = (forma: FormaPagamento) => {
     setErroPagamento(null);
-    setPedidoConfirmado(false); // Exige confirmação expressa da nova condição financeira
     onUpdateField('forma_pagamento', forma);
     onUpdateField('parcelas_cartao', undefined); // Começa indefinido sem default automático
   };
 
   const handleParcelasChange = (num: number | undefined) => {
     setErroPagamento(null);
-    setPedidoConfirmado(false);
     onUpdateField('parcelas_cartao', num);
   };
 
@@ -192,24 +191,21 @@ export const Step8Budget: React.FC<Step8BudgetProps> = ({
   const podeConfirmar =
     orcamentoValido && temNome && temTelefone && formaPagamentoDefinida && parcelasValidas;
 
-  // Estado atualizado para geração do link
-  const estadoAtualizadoParaHandoff = useMemo<CalculatorState>(() => {
-    return {
-      ...state,
-      orcamento,
-      aceite_orcamento: 'SIM',
-    };
-  }, [state, orcamento]);
-
-  const linkWhatsApp = useMemo(() => {
+  // Link para reabrir WhatsApp gerado quando a cotação estiver confirmada (6.3.2)
+  const linkWhatsAppConfirmado = useMemo(() => {
+    if (state.aceite_orcamento !== 'SIM') return '';
     return gerarLinkWhatsApp(
-      estadoAtualizadoParaHandoff,
+      {
+        ...state,
+        orcamento,
+        aceite_orcamento: 'SIM',
+      },
       'final',
       undefined,
       8,
       'Cotação & Pagamento'
     );
-  }, [estadoAtualizadoParaHandoff]);
+  }, [state, orcamento]);
 
   const handleConfirmarPedido = () => {
     if (!formaPagamentoDefinida) {
@@ -229,14 +225,27 @@ export const Step8Budget: React.FC<Step8BudgetProps> = ({
       return;
     }
 
-    // Registra o aceite formal do orçamento
+    // 1. Registra o aceite formal da cotação no estado global
     onUpdateField('aceite_orcamento', 'SIM');
-    setPedidoConfirmado(true);
 
-    // Abre o WhatsApp imediatamente
+    // 2. Snapshot final construído estritamente como consequência da ação de confirmação (6.3.2)
+    const snapshotConfirmado: CalculatorState = {
+      ...state,
+      orcamento,
+      aceite_orcamento: 'SIM',
+    };
+    const linkFinal = gerarLinkWhatsApp(
+      snapshotConfirmado,
+      'final',
+      undefined,
+      8,
+      'Cotação & Pagamento'
+    );
+
+    // 3. Abre o WhatsApp para o cliente enviar a mensagem (sem alegar que já foi enviada)
     try {
       if (typeof window !== 'undefined') {
-        window.open(linkWhatsApp, '_blank');
+        window.open(linkFinal, '_blank');
       }
     } catch {
       // Ignora bloqueios de popup do navegador; link continua disponível no botão de confirmação
@@ -288,7 +297,7 @@ export const Step8Budget: React.FC<Step8BudgetProps> = ({
         )}
       </div>
 
-      {/* Confirmação de Sucesso após o clique em Confirmar */}
+      {/* Confirmação de Sucesso após a confirmação deliberada do pedido */}
       {pedidoConfirmado && (
         <div className="p-5 bg-gradient-to-br from-emerald-950/70 via-stone-900 to-[#0c443c]/40 border border-emerald-500/60 rounded-2xl text-center space-y-3.5 shadow-2xl animate-fadeIn">
           <div className="w-12 h-12 mx-auto rounded-full bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400">
@@ -296,16 +305,16 @@ export const Step8Budget: React.FC<Step8BudgetProps> = ({
           </div>
           <div>
             <h3 className="text-lg font-bold text-white font-['Raleway',sans-serif]">
-              Cotação Confirmada pelo Cliente!
+              Cotação confirmada no aplicativo!
             </h3>
             <p className="text-xs text-emerald-200/90 mt-1 max-w-md mx-auto leading-relaxed">
-              Sua solicitação foi encaminhada para continuidade comercial. O atendimento será conduzido pelo <strong>Time Comercial Albanos</strong> pelo WhatsApp para alinhamento de disponibilidade e próximos passos.
+              Sua cotação foi registrada com sucesso. Para dar sequência ao atendimento, envie a mensagem preparada no WhatsApp do <strong>Time Comercial Albanos</strong> para alinhamento de disponibilidade e próximos passos.
             </p>
           </div>
           <div className="pt-2">
             <a
               id="btn-reabrir-whatsapp-fechamento"
-              href={linkWhatsApp}
+              href={linkWhatsAppConfirmado}
               target="_blank"
               rel="noopener noreferrer"
               className="inline-flex items-center justify-center gap-2 px-6 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs transition shadow-lg shadow-emerald-950 cursor-pointer"
@@ -322,16 +331,16 @@ export const Step8Budget: React.FC<Step8BudgetProps> = ({
               <span>Canais e Horários de Atendimento</span>
             </div>
             <div className="text-[11px] text-stone-300 space-y-0.5 leading-relaxed">
-              <p>• <strong>Iara:</strong> Atendimento automatizado 24 horas por dia.</p>
-              <p>• <strong>Time Comercial Albanos:</strong> Segunda a sexta-feira, das 10h às 17h.</p>
+              <p>• <strong>Iara:</strong> Atendimento automatizado de triagem 24 horas por dia.</p>
+              <p>• <strong>Time Comercial Albanos:</strong> Atendimento humano de segunda a sexta-feira, das 10h às 17h (SLA normal: até 24h; urgente: até 2h).</p>
               <p className="text-[10px] text-stone-400 pt-0.5">
-                <em>Nota: Os horários da equipe comercial não interferem nas datas e janelas de entrega ou retirada agendadas para o seu evento.</em>
+                <em>Nota: Os horários do Time Comercial não interferem nas datas e janelas de entrega ou retirada agendadas para o seu evento operadas pela Logística.</em>
               </p>
             </div>
           </div>
 
           <p className="text-[11px] text-stone-400">
-            Caso a janela do WhatsApp não tenha aberto automaticamente, basta clicar no botão acima para prosseguir. Tim-tim! 🍻
+            Envie a mensagem pelo WhatsApp para dar início à conversa com o Time Comercial. Caso o aplicativo não tenha aberto automaticamente, basta clicar no botão acima. Tim-tim! 🍻
           </p>
         </div>
       )}
@@ -398,7 +407,7 @@ export const Step8Budget: React.FC<Step8BudgetProps> = ({
             <span className="font-medium text-stone-200 block">
               {state.modalidade_logistica === 'RETIRADA_FABRICA'
                 ? 'Retirada na Fábrica (Jardim Canadá, Nova Lima)'
-                : `Entrega em ${state.cidade || 'Belo Horizonte'}`}
+                : `Entrega em ${state.cidade || 'endereço informado'}`}
             </span>
             <span className="text-stone-400 text-[11px]">
               {state.modalidade_logistica === 'RETIRADA_FABRICA'

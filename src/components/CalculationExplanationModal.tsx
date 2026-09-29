@@ -118,7 +118,7 @@ export const CalculationExplanationModal: React.FC<CalculationExplanationModalPr
               3. Conversão para Barris Comerciais (50 L)
             </h4>
             <p className="text-xs text-stone-300">
-              O chope oficial Albanos é disponibilizado exclusivamente em barris lacrados de <strong>50 Litros</strong>.
+              Para eventos nesta calculadora, o chope é disponibilizado em barris lacrados de <strong>50 Litros</strong>.
             </p>
 
             <div className="space-y-2 pt-1 text-xs">

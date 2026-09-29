@@ -4,6 +4,8 @@
  * Albano's Chopp Calculator — Motor de Regras de Logística e Retirada na Fábrica
  */
 
+import { validarDataIsoValida, validarHorarioValido } from './validators';
+
 /**
  * Retorna a data atual local no formato YYYY-MM-DD
  */
@@ -113,6 +115,14 @@ export function validarDataLogistica(
     return {
       valido: false,
       motivo: `Por favor, selecione a data pretendida para ${termo}.`,
+    };
+  }
+
+  // Verifica se é uma data real existente no calendário (formato YYYY-MM-DD válido)
+  if (!validarDataIsoValida(dataEscolhida)) {
+    return {
+      valido: false,
+      motivo: `A data informada para ${termo} é inválida ou não existe no calendário.`,
     };
   }
 
@@ -233,6 +243,14 @@ export function validarHorarioLogistica(
   }
 
   const h = horarioEscolhido.trim();
+
+  // Validação de horário canônico real HH:mm (00..23 : 00..59)
+  if (!validarHorarioValido(h)) {
+    return {
+      valido: false,
+      motivo: `O horário de ${termo} deve representar uma hora real no formato HH:mm.`,
+    };
+  }
 
   // Validação da janela comercial (10:00 às 17:00)
   if (h < '10:00' || h > '17:00') {

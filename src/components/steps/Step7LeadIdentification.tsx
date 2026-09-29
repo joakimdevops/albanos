@@ -15,6 +15,11 @@ import {
   Lock,
 } from 'lucide-react';
 import { CalculatorState } from '../../types';
+import {
+  validarNomeLead,
+  validarTelefoneLead,
+  validarEmailLead,
+} from '../../businessRules/validators';
 
 interface Step7LeadIdentificationProps {
   state: CalculatorState;
@@ -87,15 +92,13 @@ export const Step7LeadIdentification: React.FC<Step7LeadIdentificationProps> = (
     setCampoComErro(null);
 
     // 1. Validação de Nome (Obrigatório)
-    const nomeTrim = nome.trim();
-    if (!nomeTrim || nomeTrim.length < 3) {
+    if (!validarNomeLead(nome)) {
       dispararErro('Por favor, informe seu nome completo.', 'nome_completo', 'input-nome');
       return;
     }
 
     // 2. Validação de Telefone / WhatsApp com DDD (Obrigatório)
-    const digitosTel = telefone.replace(/\D/g, '');
-    if (digitosTel.length < 10 || digitosTel.length > 11) {
+    if (!validarTelefoneLead(telefone)) {
       dispararErro(
         'Por favor, informe um telefone/WhatsApp válido com DDD (Ex.: 31 99999-9999).',
         'telefone_responsavel',
@@ -105,24 +108,20 @@ export const Step7LeadIdentification: React.FC<Step7LeadIdentificationProps> = (
     }
 
     // 3. Validação de E-mail (Opcional: vazio não bloqueia; se preenchido, valida formato)
-    const emailTrim = email.trim();
-    if (emailTrim.length > 0) {
-      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-      if (!emailRegex.test(emailTrim)) {
-        dispararErro(
-          'Por favor, informe um endereço de e-mail válido ou deixe o campo em branco.',
-          'email',
-          'input-email'
-        );
-        return;
-      }
+    if (!validarEmailLead(email)) {
+      dispararErro(
+        'Por favor, informe um endereço de e-mail válido ou deixe o campo em branco.',
+        'email',
+        'input-email'
+      );
+      return;
     }
 
     // Persiste os dados de contato no estado da aplicação
     onUpdateField('contato', {
-      nome_completo: nomeTrim,
+      nome_completo: nome.trim(),
       telefone_responsavel: telefone.trim(),
-      email: emailTrim || undefined,
+      email: email.trim() || undefined,
     });
 
     onNext();

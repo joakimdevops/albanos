@@ -67,7 +67,7 @@ export const LeadCheckpointModal: React.FC<LeadCheckpointModalProps> = ({
                 Não vamos recomeçar do zero!
               </span>
               <p className="text-xs text-stone-200 leading-relaxed">
-                O time Albanos vai dar continuidade imediata à sua solicitação exatamente de onde paramos aqui.
+                O Time Comercial Albanos dará sequência ao atendimento exatamente de onde paramos aqui (humano: seg–sex, 10h–17h; Iara: 24h).
               </p>
             </div>
           </div>

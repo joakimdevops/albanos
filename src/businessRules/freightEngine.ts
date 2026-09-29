@@ -95,6 +95,6 @@ export function calcularFrete(
     valor: null,
     status: 'A_CONFIRMAR',
     faixaNome: 'Fora da tabela autorizada',
-    detalhe: 'Cidade fora da rota padrão imediata. O frete será confirmado com a equipe de logística.',
+    detalhe: 'Cidade fora da tabela padrão autorizada. O frete e a rota serão confirmados pelo Time Comercial Albanos.',
   };
 }

@@ -1,7 +1,14 @@
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
- * Albano's Chopp Calculator — Adaptador de Handoff WhatsApp (wa.me) V1.1
+ * Albano's Chopp Calculator — Adaptador de Handoff WhatsApp (wa.me) V1.2
+ *
+ * Princípios de Semântica Comercial (Rodada 6.3):
+ * - Handoff Preventivo: Ocorre em qualquer etapa (inclusive Etapa 8) para dúvidas/suporte; NUNCA significa aceite.
+ * - Handoff Final: Exclusivo de quando houve clique deliberado em "Confirmar Pedido" E aceite_orcamento === 'SIM'.
+ * - Evento especial (>12h ou múltiplos dias) NUNCA gera cotação confirmada.
+ * - Não faz promessas de "conversa iniciada", "mensagem enviada", "reserva automática" ou "continuidade imediata".
+ * - Atendimento: Time Comercial Albanos (seg–sex, 10h–17h; Iara 24h). Logística apenas para rota/entrega/retirada.
  */
 
 import { CalculatorState, HandoffTipo } from '../types';
@@ -12,40 +19,50 @@ import { formatarDataBrasileira } from './logisticsEngine';
 
 /**
  * Gera a frase final de "START" para iniciar o diálogo no WhatsApp
- * facilitando a continuidade imediata dependendo da etapa exata onde parou.
+ * com semântica precisa dependendo do tipo de handoff e da etapa atual.
  */
 export function gerarFraseStartAtendimento(
   etapaAtual?: number,
   tipoHandoff?: HandoffTipo,
   estado?: CalculatorState
 ): string {
-  if (tipoHandoff === 'final' || etapaAtual === 8) {
+  // CRITÉRIO CANÔNICO (6.3.1): Handoff final SÓ ocorre com tipo 'final', aceite formal 'SIM' e sem evento especial
+  const ehFinal =
+    tipoHandoff === 'final' &&
+    estado?.aceite_orcamento === 'SIM' &&
+    !estado?.evento_longo_ou_multiplos_dias;
+
+  if (ehFinal) {
     if (estado?.frete?.status === 'A_CONFIRMAR') {
-      return 'Olá, equipe Albanos! Encaminhei minha cotação pelo app com frete a confirmar e seguirei o atendimento com o Time Comercial. Podem confirmar a disponibilidade e o valor do frete para darmos sequência?';
+      return 'Olá, equipe Albanos! Confirmei minha cotação no aplicativo com frete a confirmar e gostaria de seguir o atendimento com o Time Comercial para verificar a disponibilidade e o valor do frete.';
     }
-    return 'Olá, equipe Albanos! Confirmei minha cotação pelo app e seguirei o atendimento com o Time Comercial pelo WhatsApp. Gostaria de verificar a disponibilidade e os próximos passos.';
+    return 'Olá, equipe Albanos! Confirmei minha cotação no aplicativo e gostaria de seguir o atendimento com o Time Comercial pelo WhatsApp. Gostaria de verificar a disponibilidade e os próximos passos.';
   }
 
+  // HANDOFF PREVENTIVO (em qualquer etapa, inclusive Etapa 8 sem confirmação formal)
   switch (etapaAtual) {
     case 1:
-      return 'Olá, equipe Albanos! Comecei o planejamento do meu evento (data e local acima). Podem me ajudar a dimensionar a quantidade ideal de chopp?';
+      return 'Olá, equipe Albanos! Comecei o planejamento do meu evento (data e local acima). Podem me ajudar a dimensionar a quantidade recomendada de chopp?';
     case 2:
-      return 'Olá, equipe Albanos! Já informei o público e a duração do meu evento. Podem validar se essa quantidade de chopp é a ideal para a minha festa?';
+      if (estado?.evento_longo_ou_multiplos_dias) {
+        return 'Olá, equipe Albanos! Meu evento terá mais de 12 horas ou múltiplos dias. Gostaria de um dimensionamento personalizado do Time Comercial para planejar o chopp ideal.';
+      }
+      return 'Olá, equipe Albanos! Já informei o público e a duração do meu evento. Gostaria de tirar dúvidas com o Time Comercial sobre a recomendação de chopp.';
     case 3:
-      return 'Olá, equipe Albanos! Já defini a quantidade de barris e gostaria de uma sugestão do mestre cervejeiro para o mix de estilos ideal para os meus convidados.';
+      return 'Olá, equipe Albanos! Já defini a quantidade de barris e gostaria de uma sugestão do Time Comercial para o mix de estilos ideal para os meus convidados.';
     case 4:
-      return 'Olá, equipe Albanos! Tenho dúvidas sobre a chopeira e a instalação no local do evento. Como funciona a entrega e montagem?';
+      return 'Olá, equipe Albanos! Tenho dúvidas sobre os equipamentos solicitados. Como funciona a entrega e as condições de uso da chopeira?';
     case 5:
-      return 'Olá, equipe Albanos! Estava informando o local de entrega. Gostaria de confirmar a disponibilidade de rota e horários para a minha data.';
+      return 'Olá, equipe Albanos! Estava informando os detalhes de logística. Gostaria de confirmar com o Time Comercial a disponibilidade de rota e horários para a minha data.';
     case 6:
-      return 'Olá, equipe Albanos! Revisei as informações do meu evento e gostaria de tirar algumas dúvidas antes de gerar a cotação.';
+      return 'Olá, equipe Albanos! Revisei as informações do meu evento e gostaria de tirar algumas dúvidas com o Time Comercial antes de gerar a cotação.';
     case 7:
-      return 'Olá, equipe Albanos! Estava preenchendo meus dados de contato e gostaria de ajuda para avançar com o meu pedido.';
+      return 'Olá, equipe Albanos! Estava preenchendo meus dados de contato e gostaria de ajuda do Time Comercial para avançar.';
     case 8:
-      return 'Olá, equipe Albanos! Já visualizei a cotação no app. Gostaria de tirar dúvidas sobre as formas de pagamento e prosseguir com o meu pedido.';
+      return 'Olá, equipe Albanos! Já visualizei a cotação no aplicativo, mas ainda não confirmei. Gostaria de tirar dúvidas com o Time Comercial sobre as condições e formas de pagamento.';
     case 0:
     default:
-      return 'Olá, equipe Albanos! Gostaria de ajuda de um consultor para planejar o chopp para o meu evento.';
+      return 'Olá, equipe Albanos! Gostaria de ajuda do Time Comercial para planejar o chopp para o meu evento.';
   }
 }
 
@@ -61,8 +78,14 @@ export function gerarTextoMensagemWhatsApp(
 ): string {
   const linhas: string[] = [];
 
+  // CRITÉRIO CANÔNICO (6.3.1): Handoff final exige formalmente tipoHandoff === 'final' e aceite_orcamento === 'SIM'
+  const ehFinal =
+    tipoHandoff === 'final' &&
+    estado.aceite_orcamento === 'SIM' &&
+    !estado.evento_longo_ou_multiplos_dias;
+
   // Cabeçalho Enxuto
-  if (tipoHandoff === 'final' || etapaAtual === 8) {
+  if (ehFinal) {
     linhas.push(`🍻 *Cervejaria Albanos • Cotação Confirmada pelo Cliente*`);
   } else {
     linhas.push(`🍻 *Cervejaria Albanos • Atendimento Calculadora*`);
@@ -175,7 +198,7 @@ export function gerarTextoMensagemWhatsApp(
     } else {
       // Frete A_CONFIRMAR: não publicar total fechado nem parcelas/descontos parciais como se fossem definitivos
       const prodTxt = formatarMoeda(estado.orcamento.totalProdutosBruto);
-      linhas.push(`💰 *Cotação:* Produtos: ${prodTxt} + Frete a confirmar (total final a definir pela equipe Albanos)`);
+      linhas.push(`💰 *Cotação:* Produtos: ${prodTxt} + Frete a confirmar (total final a definir pelo Time Comercial Albanos)`);
 
       const parcelas = estado.orcamento.parcelasCartao || estado.parcelas_cartao;
       const temDesconto =
@@ -213,7 +236,7 @@ export function gerarTextoMensagemWhatsApp(
 }
 
 /**
- * Gera o link wa.me pronto para clique.
+ * Gera o link wa.me pronto para clique garantindo o número canônico da Albanos.
  */
 export function gerarLinkWhatsApp(
   estado: CalculatorState,

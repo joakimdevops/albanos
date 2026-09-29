@@ -264,7 +264,7 @@ export const Step5Logistics: React.FC<Step5LogisticsProps> = ({
           Como prefere receber seu chope?
         </h2>
         <p className="text-xs text-stone-400">
-          Deseja entrega e montagem no local do evento ou prefere retirar diretamente na fábrica?
+          Deseja entrega no local do evento ou prefere retirar diretamente na fábrica?
         </p>
       </div>
 
@@ -492,7 +492,7 @@ export const Step5Logistics: React.FC<Step5LogisticsProps> = ({
               <div className="p-2.5 rounded-lg bg-amber-950/40 border border-amber-500/50 text-[11px] text-amber-200 flex items-start gap-2">
                 <Info className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
                 <span>
-                  No dia do evento, a entrega e montagem deve ocorrer até às{' '}
+                  No dia do evento, a entrega deve ocorrer até às{' '}
                   <strong className="font-mono text-amber-300">{state.horario_inicio_evento}</strong> (início do evento).
                 </span>
               </div>

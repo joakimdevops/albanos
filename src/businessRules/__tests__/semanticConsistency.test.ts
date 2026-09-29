@@ -9,6 +9,23 @@ import { calcularDimensionamento } from '../dimensioningEngine';
 import { criarEstadoInicial, importarParametrosURL, parsearParametrosUrl } from '../urlAdapter';
 import { calcularOrcamento } from '../budgetEngine';
 import { gerarTextoMensagemWhatsApp, gerarLinkWhatsApp } from '../whatsappAdapter';
+import { obterDataHojeIso } from '../logisticsEngine';
+import { determinarEtapaPorGates } from '../gatesEngine';
+import {
+  validarInteiroEstrito,
+  parsearInteiroEstrito,
+  validarInteiroPositivoEstrito,
+  validarInteiroNaoNegativoEstrito,
+  validarNomeLead,
+  validarTelefoneLead,
+  validarEmailLead,
+  validarDuracaoHoras,
+  validarHorarioValido,
+  validarDataIsoValida,
+  validarDataEvento,
+  validarParcelasCartao,
+  validarGateIdentificacao,
+} from '../validators';
 import { CalculatorState } from '../../types';
 
 let totalTests = 0;
@@ -613,29 +630,6 @@ assert(
 // -----------------------------------------------------------------------------
 console.log('9. IDENTIFICAÇÃO PRÉ-ORÇAMENTO & FECHAMENTO DIRETO:');
 
-// Helper de validação do gate de identificação do lead
-function validarGateIdentificacao(contato: {
-  nome_completo?: string;
-  telefone_responsavel?: string;
-  email?: string;
-}): { valido: boolean; erro?: string } {
-  const nomeTrim = contato.nome_completo?.trim();
-  if (!nomeTrim || nomeTrim.length < 3) {
-    return { valido: false, erro: 'Nome completo obrigatório' };
-  }
-  const telDigitos = (contato.telefone_responsavel || '').replace(/\D/g, '');
-  if (telDigitos.length < 10 || telDigitos.length > 11) {
-    return { valido: false, erro: 'Telefone com DDD obrigatório' };
-  }
-  const emailTrim = contato.email?.trim();
-  if (emailTrim && emailTrim.length > 0) {
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailTrim)) {
-      return { valido: false, erro: 'E-mail inválido' };
-    }
-  }
-  return { valido: true };
-}
-
 // 32A: Nome vazio ou insuficiente bloqueia avanço para o orçamento
 const vNomeVazio = validarGateIdentificacao({ nome_completo: '', telefone_responsavel: '31999999999' });
 const vNomeCurto = validarGateIdentificacao({ nome_completo: 'Lu', telefone_responsavel: '31999999999' });
@@ -717,7 +711,7 @@ assert(
     msgFinal.includes('lucas@exemplo.com.br') &&
     msgFinal.includes('Cartão (3x de') &&
     msgFinal.includes('2.280,06') &&
-    msgFinal.includes('Confirmei minha cotação pelo app') &&
+    msgFinal.includes('Confirmei minha cotação') &&
     msgFinal.includes('Cotação Confirmada pelo Cliente'),
   '32J. Confirmação do pedido gera o handoff wa.me completo com dados do lead, parcelas e aceite'
 );
@@ -747,19 +741,46 @@ const urlAposLogistica = parsearParametrosUrl(
 const resAposLogistica = importarParametrosURL(urlAposLogistica, ESTADO_INICIAL);
 assert(resAposLogistica.primeiraEtapaPendente === 6, '32M1. Sem conferência pré-orçamento confirmada, deep-link direciona para Etapa 6 (Revisão)');
 
-// Com revisão confirmada mas sem contato -> Etapa 7 (Identificação)
+// 32M2: Parâmetro revisao_pre_orcamento_confirmada na URL é ignorado e não ultrapassa Etapa 6
 const urlComRevisaoSemContato = parsearParametrosUrl(
   '?src=iara&data_evento=2026-11-20&horario_inicio_evento=14:00&qtd_adultos=100&duracao_horas=4&outras_bebidas_alcoolicas=NAO&cidade=Belo+Horizonte&barris_total_escolhidos=3&barris_pilsen=3&precisa_chopeira=SIM&precisa_gas=SIM&modalidade_logistica=RETIRADA_FABRICA&data_retirada=2026-11-20&hora_retirada=12:00&revisao_pre_orcamento_confirmada=true'
 );
 const resComRevisaoSemContato = importarParametrosURL(urlComRevisaoSemContato, ESTADO_INICIAL);
-assert(resComRevisaoSemContato.primeiraEtapaPendente === 7, '32M2. Com revisão confirmada e sem contato, deep-link direciona para Etapa 7 (Identificação)');
+assert(
+  resComRevisaoSemContato.novoEstado.revisao_pre_orcamento_confirmada === false &&
+    resComRevisaoSemContato.primeiraEtapaPendente === 6,
+  '32M2. URL não pode fabricar revisão confirmada e deep-link para na Etapa 6 (Revisão)'
+);
 
-// Com revisão confirmada E contato completo -> Etapa 8 (Cotação & Fechamento)
+// 32M3: Mesmo com contato completo na URL, sem revisão confirmada pelo usuário para na Etapa 6
 const urlComContatoCompleto = parsearParametrosUrl(
   '?src=iara&data_evento=2026-11-20&horario_inicio_evento=14:00&qtd_adultos=100&duracao_horas=4&outras_bebidas_alcoolicas=NAO&cidade=Belo+Horizonte&barris_total_escolhidos=3&barris_pilsen=3&precisa_chopeira=SIM&precisa_gas=SIM&modalidade_logistica=RETIRADA_FABRICA&data_retirada=2026-11-20&hora_retirada=12:00&revisao_pre_orcamento_confirmada=true&nome=Lucas+Mendes&telefone=31999999999'
 );
 const resComContatoCompleto = importarParametrosURL(urlComContatoCompleto, ESTADO_INICIAL);
-assert(resComContatoCompleto.primeiraEtapaPendente === 8, '32M3. Com contato completo, deep-link direciona para Etapa 8 (Cotação & Fechamento)');
+assert(
+  resComContatoCompleto.novoEstado.revisao_pre_orcamento_confirmada === false &&
+    resComContatoCompleto.primeiraEtapaPendente === 6,
+  '32M3. Deep-link nunca ultrapassa a Etapa 6 e exige ato explícito de revisão'
+);
+
+// Validação dos gates pós-revisão confirmada legitimamente pelo usuário na UI:
+const estadoComRevisaoConfirmadaUI: CalculatorState = {
+  ...resComRevisaoSemContato.novoEstado,
+  revisao_pre_orcamento_confirmada: true,
+};
+assert(
+  determinarEtapaPorGates(estadoComRevisaoConfirmadaUI) === 7,
+  '32M4. Com conferência de revisão confirmada pelo usuário e sem contato, gates liberam avanço para Etapa 7'
+);
+
+const estadoComRevisaoEContatoUI: CalculatorState = {
+  ...resComContatoCompleto.novoEstado,
+  revisao_pre_orcamento_confirmada: true,
+};
+assert(
+  determinarEtapaPorGates(estadoComRevisaoEContatoUI) === 8,
+  '32M5. Com revisão confirmada e contato completo, gates liberam avanço para Etapa 8'
+);
 
 // 32N: Nenhuma regra antiga continua exigindo e-mail para conclusão da identificação
 const vSemEmailParaOrcamento = validarGateIdentificacao({
@@ -785,6 +806,7 @@ const estadoRetiradaFabrica: CalculatorState = {
   data_retirada: '2026-11-20',
   hora_retirada: '11:00',
   forma_pagamento: 'PIX',
+  aceite_orcamento: 'SIM',
   contato: { nome_completo: 'Mariana', telefone_responsavel: '31 99999-0000' },
 };
 const msgRetirada = gerarTextoMensagemWhatsApp(estadoRetiradaFabrica, 'final', 8, 'Cotação & Pagamento');
@@ -830,13 +852,13 @@ const estadoComEspecialEContato: CalculatorState = {
   horario_inicio_evento: '12:00',
   qtd_adultos: 100,
   outras_bebidas_alcoolicas: 'NAO',
-  duracao_horas: 12,
-  barris_total_escolhidos: 3,
-  mix: { pilsen: 3, life_lager: 0, session_ipa: 0, amber: 0, american_ipa: 0, pale_ale: 0 },
+  duracao_horas: undefined,
+  barris_total_escolhidos: undefined,
+  mix: { pilsen: 0, life_lager: 0, session_ipa: 0, amber: 0, american_ipa: 0, pale_ale: 0 },
   forma_pagamento: 'PIX',
   contato: { nome_completo: 'Carlos Teste', telefone_responsavel: '31 98888-7777' },
 };
-const msgWhatsAppEspecial = gerarTextoMensagemWhatsApp(estadoComEspecialEContato, 'final', 8, 'Cotação & Pagamento');
+const msgWhatsAppEspecial = gerarTextoMensagemWhatsApp(estadoComEspecialEContato, 'preventivo', 2, 'Dimensionamento');
 assert(
   msgWhatsAppEspecial.includes('Evento com mais de 12h ou múltiplos dias (análise comercial)'),
   '34C. Mensagem do WhatsApp reflete condição de evento especial (> 12h ou múltiplos dias)'
@@ -965,7 +987,7 @@ assert(
 const msgFinalHandoff = gerarTextoMensagemWhatsApp(estadoAceite, 'final', 8, 'Cotação & Pagamento');
 assert(
   msgFinalHandoff.includes('Time Comercial') &&
-    msgFinalHandoff.includes('Confirmei minha cotação pelo app') &&
+    msgFinalHandoff.includes('Confirmei minha cotação') &&
     !msgFinalHandoff.includes('reserva garantida') &&
     !msgFinalHandoff.includes('chopeira garantida'),
   '37C. Mensagem de handoff direciona explicitamente para o Time Comercial Albanos sem promessas automáticas de reserva'
@@ -980,6 +1002,493 @@ assert(
     msgFinalHandoff.includes('Cotação:') &&
     msgFinalHandoff.includes('Cartão (3x de'),
   '37D. Handoff consolida e transmite identificação completa, dados de chope, frete e pagamento'
+);
+
+// -----------------------------------------------------------------------------
+// GRUPO 15: RODADA 6.1 — INTEGRIDADE DE ESTADO E EVENTO ESPECIAL
+// -----------------------------------------------------------------------------
+console.log('\n15. RODADA 6.1 — INTEGRIDADE DE ESTADO E EVENTO ESPECIAL:');
+
+// 1. Evento normal 4h calcula normalmente
+let est61 = aplicarMudancaEstado(ESTADO_INICIAL, 'qtd_adultos', 50);
+est61 = aplicarMudancaEstado(est61, 'duracao_horas', 4);
+est61 = aplicarMudancaEstado(est61, 'outras_bebidas_alcoolicas', 'NAO');
+assert(
+  est61.duracao_horas === 4 && est61.litros_estimados === 75,
+  '6.1.1. Evento normal 4h calcula litros normalmente (50 adultos x 1.5L = 75L)'
+);
+
+// 2. Marcar evento especial -> 4h deixa de existir
+est61 = aplicarMudancaEstado(est61, 'evento_longo_ou_multiplos_dias', true);
+assert(
+  est61.duracao_horas === undefined,
+  '6.1.2. Ao marcar evento especial, a duração de 4h anterior deixa de existir (undefined)'
+);
+
+// 3. Litros anteriores deixam de existir
+assert(
+  est61.litros_estimados === undefined,
+  '6.1.3. Litros anteriores deixam de existir (undefined) ao ativar evento especial'
+);
+
+// 4. Evento especial não recebe 12h automaticamente
+assert(
+  est61.duracao_horas !== 12 && est61.duracao_horas === undefined,
+  '6.1.4. Evento especial NÃO recebe 12h automaticamente nem silenciosamente'
+);
+
+// 5. Evento especial não calcula litros
+const estModAdultos = aplicarMudancaEstado(est61, 'qtd_adultos', 80);
+assert(
+  estModAdultos.litros_estimados === undefined,
+  '6.1.5. Evento especial NÃO calcula litros automaticamente mesmo ao alterar público'
+);
+
+// 6. Evento especial não consegue avançar usando barris residuais
+assert(
+  est61.barris_total_escolhidos === undefined && est61.cenario_quantidade === undefined,
+  '6.1.6. Evento especial invalida barris_total_escolhidos e cenario_quantidade'
+);
+
+// 7. Voltar ao modo normal exige nova duração
+let estVoltaNormal = aplicarMudancaEstado(est61, 'evento_longo_ou_multiplos_dias', false);
+assert(
+  estVoltaNormal.duracao_horas === undefined && estVoltaNormal.litros_estimados === undefined,
+  '6.1.7A. Voltar ao modo normal mantém duração e litros indefinidos até escolha explícita'
+);
+estVoltaNormal = aplicarMudancaEstado(estVoltaNormal, 'duracao_horas', 5);
+assert(
+  estVoltaNormal.duracao_horas === 5 && estVoltaNormal.litros_estimados !== undefined,
+  '6.1.7B. Nova duração inteira informada permite cálculo normal (50 x 1.65 = 83L)'
+);
+
+// 8. Mudar mix entre dois estilos de mesmo preço invalida aceite
+let estMixAceite: CalculatorState = {
+  ...ESTADO_INICIAL,
+  barris_total_escolhidos: 2,
+  mix: { pilsen: 0, life_lager: 0, session_ipa: 0, amber: 2, american_ipa: 0, pale_ale: 0 },
+  revisao_pre_orcamento_confirmada: true,
+  aceite_orcamento: 'SIM',
+  forma_pagamento: 'PIX',
+};
+// Amber (R$ 850) -> Pale Ale (R$ 850): Preço total é idêntico!
+const estMixAlterado = aplicarMudancaEstado(estMixAceite, 'mix', {
+  pilsen: 0, life_lager: 0, session_ipa: 0, amber: 0, american_ipa: 0, pale_ale: 2,
+});
+assert(
+  estMixAlterado.aceite_orcamento === 'PENDENTE',
+  '6.1.8A. Mudar mix entre dois estilos de mesmo preço invalida aceite_orcamento para PENDENTE'
+);
+assert(
+  estMixAlterado.revisao_pre_orcamento_confirmada === false,
+  '6.1.8B. Mudar mix entre dois estilos de mesmo preço invalida revisao_pre_orcamento_confirmada para false'
+);
+
+// 9. Mudar equipamento invalida revisão
+let estEquipRevisao: CalculatorState = {
+  ...ESTADO_INICIAL,
+  precisa_chopeira: false,
+  revisao_pre_orcamento_confirmada: true,
+  aceite_orcamento: 'SIM',
+};
+const estEquipAlterado = aplicarMudancaEstado(estEquipRevisao, 'precisa_chopeira', true);
+assert(
+  estEquipAlterado.revisao_pre_orcamento_confirmada === false,
+  '6.1.9A. Mudar resposta de equipamento invalida revisão para false'
+);
+assert(
+  estEquipAlterado.aceite_orcamento === 'PENDENTE',
+  '6.1.9B. Mudar resposta de equipamento invalida aceite para PENDENTE'
+);
+
+// 10. Mudar logística invalida revisão
+let estLogisticaRevisao: CalculatorState = {
+  ...ESTADO_INICIAL,
+  modalidade_logistica: 'RETIRADA_FABRICA',
+  revisao_pre_orcamento_confirmada: true,
+  aceite_orcamento: 'SIM',
+};
+const estLogisticaAlterado = aplicarMudancaEstado(estLogisticaRevisao, 'modalidade_logistica', 'ENTREGA');
+assert(
+  estLogisticaAlterado.revisao_pre_orcamento_confirmada === false,
+  '6.1.10A. Mudar modalidade logística invalida revisão para false'
+);
+assert(
+  estLogisticaAlterado.aceite_orcamento === 'PENDENTE',
+  '6.1.10B. Mudar modalidade logística invalida aceite para PENDENTE'
+);
+
+// 11. Mudar evento após aceite invalida aceite
+let estEventoAceite: CalculatorState = {
+  ...ESTADO_INICIAL,
+  data_evento: '2026-12-01',
+  revisao_pre_orcamento_confirmada: true,
+  aceite_orcamento: 'SIM',
+};
+const estEventoAlterado = aplicarMudancaEstado(estEventoAceite, 'data_evento', '2026-12-02');
+assert(
+  estEventoAlterado.aceite_orcamento === 'PENDENTE',
+  '6.1.11A. Mudar data do evento após aceite invalida aceite para PENDENTE'
+);
+assert(
+  estEventoAlterado.revisao_pre_orcamento_confirmada === false,
+  '6.1.11B. Mudar data do evento após aceite invalida revisão para false'
+);
+
+// 12. Data "hoje" utiliza calendário local
+const dataHoje = obterDataHojeIso();
+const agoraLocal = new Date();
+const esperadoLocal = `${agoraLocal.getFullYear()}-${String(agoraLocal.getMonth() + 1).padStart(2, '0')}-${String(agoraLocal.getDate()).padStart(2, '0')}`;
+assert(
+  dataHoje === esperadoLocal,
+  '6.1.12. Função obterDataHojeIso() utiliza calendário local do cliente (ano, mês e dia locais)'
+);
+
+// -----------------------------------------------------------------------------
+// GRUPO 16: RODADA 6.2 — HARDENING DE INPUTS, URL ADAPTER E GATES
+// -----------------------------------------------------------------------------
+console.log('\n16. RODADA 6.2 — HARDENING DE INPUTS, URL ADAPTER E GATES:');
+
+// 6.2.1: Validadores canônicos unificados
+assert(!validarInteiroEstrito(4.5), '6.2.1A. validarInteiroEstrito rejeita número decimal 4.5');
+assert(!validarInteiroEstrito('4.5'), '6.2.1B. validarInteiroEstrito rejeita string decimal 4.5');
+assert(parsearInteiroEstrito('4.5') === null, '6.2.1C. parsearInteiroEstrito retorna null para decimal');
+assert(parsearInteiroEstrito('12') === 12, '6.2.1D. parsearInteiroEstrito converte inteiro estrito corretamente');
+
+// 6.2.2: Duração aceita somente 1..12 inteiros estritos
+assert(!validarDuracaoHoras(4.5), '6.2.2A. Duração 4.5h rejeitada');
+assert(!validarDuracaoHoras(4.9), '6.2.2B. Duração 4.9h rejeitada');
+assert(!validarDuracaoHoras(0), '6.2.2C. Duração zero rejeitada');
+assert(!validarDuracaoHoras(-2), '6.2.2D. Duração negativa rejeitada');
+assert(!validarDuracaoHoras(13), '6.2.2E. Duração > 12h rejeitada');
+assert(validarDuracaoHoras(1), '6.2.2F. Duração 1h aceita');
+assert(validarDuracaoHoras(12), '6.2.2G. Duração 12h aceita');
+
+// URL Adapter com duração fracionada
+const urlDuracaoFrac = parsearParametrosUrl('?src=iara&duracao_horas=4.5');
+const resDuracaoFrac = importarParametrosURL(urlDuracaoFrac, ESTADO_INICIAL);
+assert(
+  resDuracaoFrac.novoEstado.duracao_horas === undefined && resDuracaoFrac.parametrosIgnorados >= 1,
+  '6.2.2H. URL com duracao_horas=4.5 é ignorada sem floor/arredondamento e não preenche o estado'
+);
+
+// 6.2.3: Nome, telefone e e-mail
+assert(!validarNomeLead('  ab  '), '6.2.3A. Nome com menos de 3 caracteres rejeitado');
+assert(validarNomeLead('Ana'), '6.2.3B. Nome com 3 caracteres válido');
+assert(!validarTelefoneLead('12345'), '6.2.3C. Telefone com menos de 10 dígitos rejeitado');
+assert(!validarTelefoneLead('1234567890123'), '6.2.3D. Telefone com mais de 11 dígitos rejeitado');
+assert(validarTelefoneLead('(31) 98888-7777'), '6.2.3E. Telefone celular com DDD aceito');
+assert(validarTelefoneLead('3133334444'), '6.2.3F. Telefone fixo com DDD aceito');
+assert(validarEmailLead(''), '6.2.3G. E-mail vazio é aceito (campo opcional)');
+assert(!validarEmailLead('teste-invalido'), '6.2.3H. E-mail sem @ ou domínio rejeitado');
+
+const urlContatoInvalido = parsearParametrosUrl('?src=iara&nome=ab&telefone=12345&email=invalido');
+const resContatoInvalido = importarParametrosURL(urlContatoInvalido, ESTADO_INICIAL);
+assert(
+  !resContatoInvalido.novoEstado.contato?.nome_completo &&
+    !resContatoInvalido.novoEstado.contato?.telefone_responsavel &&
+    !resContatoInvalido.novoEstado.contato?.email,
+  '6.2.3I. URL com dados de contato inválidos rejeita cada campo e não corrompe o estado'
+);
+
+// 6.2.4: Horários e Datas
+assert(!validarHorarioValido('25:00'), '6.2.4A. Horário 25:00 rejeitado como impossível');
+assert(!validarHorarioValido('12:78'), '6.2.4B. Horário 12:78 rejeitado por minuto inválido');
+assert(!validarHorarioValido('99:99'), '6.2.4C. Horário 99:99 rejeitado');
+assert(validarHorarioValido('14:30'), '6.2.4D. Horário 14:30 válido');
+
+assert(!validarDataIsoValida('2026-02-30'), '6.2.4E. Data 30 de fevereiro rejeitada como inexistente');
+assert(!validarDataIsoValida('2026-11-31'), '6.2.4F. Data 31 de novembro rejeitada (mês de 30 dias)');
+assert(validarDataIsoValida('2026-11-20'), '6.2.4G. Data real de calendário válida');
+
+const urlHoraInvalida = parsearParametrosUrl('?src=iara&horario_inicio_evento=12:78&data_evento=2026-02-30');
+const resHoraInvalida = importarParametrosURL(urlHoraInvalida, ESTADO_INICIAL);
+assert(
+  resHoraInvalida.novoEstado.horario_inicio_evento === undefined &&
+    resHoraInvalida.novoEstado.data_evento === undefined,
+  '6.2.4H. URL Adapter rejeita horário impossível e data inexistente'
+);
+
+// 6.2.5: Inteiros estritos (sem Math.floor ou coerção silenciosa)
+const urlInteirosFloat = parsearParametrosUrl(
+  '?src=iara&qtd_adultos=20.5&barris_total_escolhidos=3.2&parcelas_cartao=2.7'
+);
+const resInteirosFloat = importarParametrosURL(urlInteirosFloat, ESTADO_INICIAL);
+assert(
+  resInteirosFloat.novoEstado.qtd_adultos === undefined &&
+    resInteirosFloat.novoEstado.barris_total_escolhidos === undefined &&
+    resInteirosFloat.novoEstado.parcelas_cartao === undefined,
+  '6.2.5. URL Adapter rejeita decimais em adultos, barris e parcelas sem aplicar floor silencioso'
+);
+
+// 6.2.6 & 6.2.7: Revisão e Aceite nunca podem ser fabricados por URL
+const urlFabricada = parsearParametrosUrl(
+  '?src=iara&revisao_pre_orcamento_confirmada=true&aceite_orcamento=SIM'
+);
+const resFabricada = importarParametrosURL(urlFabricada, ESTADO_INICIAL);
+assert(
+  resFabricada.novoEstado.revisao_pre_orcamento_confirmada === false,
+  '6.2.6. URL nunca pode marcar revisao_pre_orcamento_confirmada como true'
+);
+assert(
+  resFabricada.novoEstado.aceite_orcamento === 'PENDENTE',
+  '6.2.7. URL nunca pode colocar aceite_orcamento como SIM'
+);
+
+// 6.2.8: URL Adapter limpo e seguro
+assert(
+  resFabricada.parametrosIgnorados >= 2,
+  '6.2.8. Tentativas de injeção de revisão ou aceite incrementam parametrosIgnorados com log de auditoria'
+);
+
+// 6.2.9: Auditoria de Gates estritos
+// 1. Estado inicial -> Etapa 1
+assert(determinarEtapaPorGates(ESTADO_INICIAL) === 1, '6.2.9A. Estado inicial sem dados direciona para Etapa 1');
+
+// 2. Evento completo sem barris -> Etapa 2
+const estEventoCompleto: CalculatorState = {
+  ...ESTADO_INICIAL,
+  data_evento: '2026-11-20',
+  horario_inicio_evento: '14:00',
+  cidade: 'Belo Horizonte',
+  qtd_adultos: 50,
+  duracao_horas: 4,
+  outras_bebidas_alcoolicas: 'NAO',
+};
+assert(determinarEtapaPorGates(estEventoCompleto) === 2, '6.2.9B. Evento completo sem barris direciona para Etapa 2');
+
+// 3. Evento especial (>12h ou múltiplos dias) para na Etapa 2 para contato comercial (não pula para Etapa 3)
+const estEspecialComTudo: CalculatorState = {
+  ...estEventoCompleto,
+  duracao_horas: undefined,
+  evento_longo_ou_multiplos_dias: true,
+  barris_total_escolhidos: 5,
+  mix: { pilsen: 5, life_lager: 0, session_ipa: 0, amber: 0, american_ipa: 0, pale_ale: 0 },
+  precisa_chopeira: true,
+  precisa_gas: true,
+  modalidade_logistica: 'RETIRADA_FABRICA',
+  data_retirada: '2026-11-20',
+  hora_retirada: '11:00',
+};
+assert(
+  determinarEtapaPorGates(estEspecialComTudo) === 2,
+  '6.2.9C. Evento especial (>12h) para na Etapa 2 para atendimento comercial e não pula para Mix'
+);
+
+// 4. Barris definidos mas mix não fecha -> Etapa 3
+const estBarrisSemMix: CalculatorState = {
+  ...estEventoCompleto,
+  barris_total_escolhidos: 2,
+  mix: { pilsen: 1, life_lager: 0, session_ipa: 0, amber: 0, american_ipa: 0, pale_ale: 0 },
+};
+assert(determinarEtapaPorGates(estBarrisSemMix) === 3, '6.2.9D. Mix divergente de barris_total_escolhidos trava na Etapa 3');
+
+// 5. Mix fechado mas equipamentos indefinidos -> Etapa 4
+const estMixSemEquip: CalculatorState = {
+  ...estEventoCompleto,
+  barris_total_escolhidos: 2,
+  mix: { pilsen: 2, life_lager: 0, session_ipa: 0, amber: 0, american_ipa: 0, pale_ale: 0 },
+  precisa_chopeira: undefined,
+  precisa_gas: undefined,
+};
+assert(determinarEtapaPorGates(estMixSemEquip) === 4, '6.2.9E. Equipamentos indefinidos travam na Etapa 4');
+
+// 6. Equipamentos respondidos mas logística indefinida -> Etapa 5
+const estEquipSemLogistica: CalculatorState = {
+  ...estMixSemEquip,
+  precisa_chopeira: true,
+  precisa_gas: true,
+  modalidade_logistica: 'A_DEFINIR',
+};
+assert(determinarEtapaPorGates(estEquipSemLogistica) === 5, '6.2.9F. Logística indefinida trava na Etapa 5');
+
+// 7. Logística completa mas revisão não confirmada -> Etapa 6
+const estLogisticaCompletaSemRevisao: CalculatorState = {
+  ...estEquipSemLogistica,
+  modalidade_logistica: 'RETIRADA_FABRICA',
+  data_retirada: '2026-11-20',
+  hora_retirada: '11:00',
+  revisao_pre_orcamento_confirmada: false,
+};
+assert(
+  determinarEtapaPorGates(estLogisticaCompletaSemRevisao) === 6,
+  '6.2.9G. Logística completa sem revisão confirmada trava na Etapa 6'
+);
+
+// 8. Revisão confirmada mas sem identificação do lead -> Etapa 7
+const estRevisaoConfirmadaSemLead: CalculatorState = {
+  ...estLogisticaCompletaSemRevisao,
+  revisao_pre_orcamento_confirmada: true,
+  contato: { nome_completo: '', telefone_responsavel: '' },
+};
+assert(
+  determinarEtapaPorGates(estRevisaoConfirmadaSemLead) === 7,
+  '6.2.9H. Revisão confirmada sem identificação do lead trava na Etapa 7'
+);
+
+// 9. Revisão confirmada e identificação completa -> Etapa 8
+const estProntoParaOrcamento: CalculatorState = {
+  ...estRevisaoConfirmadaSemLead,
+  contato: { nome_completo: 'Carlos Silva', telefone_responsavel: '31 98888-1234' },
+};
+assert(
+  determinarEtapaPorGates(estProntoParaOrcamento) === 8,
+  '6.2.9I. Revisão confirmada e lead identificado libera acesso à Etapa 8 (Cotação)'
+);
+
+// -----------------------------------------------------------------------------
+// GRUPO 17: RODADA 6.3 — ACEITE, WHATSAPP E SEMÂNTICA COMERCIAL
+// -----------------------------------------------------------------------------
+console.log('\n17. RODADA 6.3 — ACEITE, WHATSAPP E SEMÂNTICA COMERCIAL:');
+
+// Estado base de teste pronto na Etapa 8 com cotação calculada
+const estEtapa8Base: CalculatorState = {
+  ...estProntoParaOrcamento,
+  forma_pagamento: 'PIX',
+  aceite_orcamento: 'PENDENTE',
+};
+estEtapa8Base.orcamento = calcularOrcamento({
+  barrisTotal: estEtapa8Base.barris_total_escolhidos || 2,
+  mix: estEtapa8Base.mix,
+  frete: estEtapa8Base.frete,
+  formaPagamento: 'PIX',
+  houveBarganha: false,
+});
+
+// 6.3.1A: Handoff preventivo na Etapa 8 NÃO é tratado como final
+const msgPreventivaEtapa8 = gerarTextoMensagemWhatsApp(estEtapa8Base, 'preventivo', 8, 'Cotação & Pagamento');
+assert(
+  !msgPreventivaEtapa8.includes('Cotação Confirmada pelo Cliente') &&
+    msgPreventivaEtapa8.includes('Atendimento Calculadora') &&
+    msgPreventivaEtapa8.includes('Etapa 8/8'),
+  '6.3.1A. Preventivo na Etapa 8 NÃO é tratado como final e exibe cabeçalho de atendimento'
+);
+
+// 6.3.1B: Preventivo na Etapa 8 não alega confirmação e apenas tira dúvidas
+assert(
+  msgPreventivaEtapa8.includes('ainda não confirmei') &&
+    !msgPreventivaEtapa8.includes('Confirmei minha cotação'),
+  '6.3.1B. Preventivo na Etapa 8 informa que ainda não confirmou e pede apoio para dúvidas'
+);
+
+// 6.3.1C: Handoff final SÓ ocorre com aceite_orcamento === 'SIM' E tipoHandoff === 'final'
+const estAceiteReal: CalculatorState = {
+  ...estEtapa8Base,
+  aceite_orcamento: 'SIM',
+};
+const msgFinalReal = gerarTextoMensagemWhatsApp(estAceiteReal, 'final', 8, 'Cotação & Pagamento');
+assert(
+  msgFinalReal.includes('Cotação Confirmada pelo Cliente') &&
+    msgFinalReal.includes('Confirmei minha cotação no aplicativo'),
+  '6.3.1C. Handoff final com aceite_orcamento=SIM reflete cotação confirmada pelo cliente'
+);
+
+// 6.3.1D: tipoHandoff === 'final' com aceite_orcamento === 'PENDENTE' não vaza confirmação
+const msgFinalSemAceite = gerarTextoMensagemWhatsApp(estEtapa8Base, 'final', 8, 'Cotação & Pagamento');
+assert(
+  !msgFinalSemAceite.includes('Cotação Confirmada pelo Cliente') &&
+    msgFinalSemAceite.includes('Atendimento Calculadora'),
+  '6.3.1D. tipoHandoff final com aceite_orcamento=PENDENTE defende o invariante e não simula confirmação'
+);
+
+// 6.3.2: Snapshot final criado como consequência da confirmação
+const snapshotConfirmado: CalculatorState = {
+  ...estEtapa8Base,
+  aceite_orcamento: 'SIM',
+};
+const linkConfirmado = gerarLinkWhatsApp(snapshotConfirmado, 'final', undefined, 8, 'Cotação & Pagamento');
+assert(
+  linkConfirmado.includes(encodeURIComponent('Cotação Confirmada pelo Cliente')),
+  '6.3.2. Snapshot com aceite_orcamento=SIM gera link de fechamento com integridade'
+);
+
+// 6.3.3A: Mudança de forma de pagamento tira UI do estado confirmado (redefine para PENDENTE)
+const estMudouPagto = aplicarMudancaEstado(estAceiteReal, 'forma_pagamento', 'CARTAO');
+assert(
+  estMudouPagto.aceite_orcamento === 'PENDENTE',
+  '6.3.3A. Mudança de forma de pagamento redefine aceite_orcamento para PENDENTE'
+);
+
+// 6.3.3B: Mudança de parcelas cartão tira UI do estado confirmado
+const estCartaoAceito = aplicarMudancaEstado(
+  { ...estAceiteReal, forma_pagamento: 'CARTAO', parcelas_cartao: 2 },
+  'aceite_orcamento',
+  'SIM'
+);
+const estMudouParcelas = aplicarMudancaEstado(estCartaoAceito, 'parcelas_cartao', 3);
+assert(
+  estMudouParcelas.aceite_orcamento === 'PENDENTE',
+  '6.3.3B. Mudança de parcelas no cartão redefine aceite_orcamento para PENDENTE'
+);
+
+// 6.3.3C: Mudança de cupom/barganha tira UI do estado confirmado
+const estMudouBarganha = aplicarMudancaEstado(estAceiteReal, 'houve_barganha', true);
+assert(
+  estMudouBarganha.aceite_orcamento === 'PENDENTE',
+  '6.3.3C. Aplicação ou alteração de cupom/barganha redefine aceite_orcamento para PENDENTE'
+);
+
+// 6.3.3D: Mudança de mix tira UI do estado confirmado
+const estMudouMix = aplicarMudancaEstado(estAceiteReal, 'mix', {
+  pilsen: 1, session_ipa: 1, amber: 0, life_lager: 0, american_ipa: 0, pale_ale: 0,
+});
+assert(
+  estMudouMix.aceite_orcamento === 'PENDENTE',
+  '6.3.3D. Mudança no mix de estilos redefine aceite_orcamento para PENDENTE'
+);
+
+// 6.3.4A & 6.3.4B: Proibições de copy (não alegar mensagem enviada, conversa iniciada, etc.)
+assert(
+  !msgFinalReal.includes('mensagem enviada') &&
+    !msgFinalReal.includes('mensagem recebida') &&
+    !msgFinalReal.includes('solicitação encaminhada') &&
+    !msgFinalReal.includes('conversa iniciada') &&
+    !msgFinalReal.includes('reserva confirmada') &&
+    !msgFinalReal.includes('estoque confirmado') &&
+    !msgFinalReal.includes('equipamento garantido') &&
+    !msgFinalReal.includes('pagamento recebido'),
+  '6.3.4. Mensagens do WhatsApp não afirmam falsamente envio, recebimento, reserva de estoque ou pagamento recebido'
+);
+
+// 6.3.5: Não fazer promessa de continuidade imediata
+assert(
+  !msgFinalReal.includes('continuidade imediata') &&
+    !msgPreventivaEtapa8.includes('continuidade imediata'),
+  '6.3.5. Mensagens não contêm promessa de continuidade imediata'
+);
+
+// 6.3.6: Responsabilidade de atendimento atribuída ao Time Comercial Albanos
+assert(
+  msgFinalReal.includes('Time Comercial') &&
+    msgPreventivaEtapa8.includes('Time Comercial'),
+  '6.3.6. Atendimento é referenciado canonicamente ao Time Comercial Albanos'
+);
+
+// 6.3.7: Equipamentos e logística não prometem montagem inclusa
+assert(
+  !msgFinalReal.includes('montagem inclusa') &&
+    !msgPreventivaEtapa8.includes('montagem'),
+  '6.3.7. Entrega e equipamentos não prometem montagem inclusa automaticamente'
+);
+
+// 6.3.8: Evento especial (>12h) NUNCA gera cotação confirmada
+const estEspecialFinal: CalculatorState = {
+  ...estAceiteReal,
+  evento_longo_ou_multiplos_dias: true,
+  duracao_horas: undefined,
+};
+const msgEspecialTentativaFinal = gerarTextoMensagemWhatsApp(estEspecialFinal, 'final', 2, 'Dimensionamento');
+assert(
+  !msgEspecialTentativaFinal.includes('Cotação Confirmada pelo Cliente') &&
+    msgEspecialTentativaFinal.includes('Atendimento Calculadora'),
+  '6.3.8. Evento especial (>12h) NUNCA gera Cotação Confirmada pelo Cliente'
+);
+
+// 6.3.9: WhatsApp link utiliza estritamente o número canônico oficial
+const linkFinalCanonico = gerarLinkWhatsApp(estAceiteReal, 'final', undefined, 8);
+assert(
+  linkFinalCanonico.startsWith('https://wa.me/553288223023?'),
+  '6.3.9. Link wa.me gerado estritamente com número canônico 553288223023'
 );
 
 console.log('\n======================================================');

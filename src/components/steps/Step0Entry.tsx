@@ -68,7 +68,7 @@ export const Step0Entry: React.FC<Step0EntryProps> = ({
             Calculadora de Chope
           </h1>
           <p className="text-xs sm:text-base text-stone-300 max-w-md mx-auto leading-relaxed">
-            Calcule a quantidade exata de chope para o seu evento, escolha seus estilos preferidos e receba sua cotação em minutos.
+            Calcule a quantidade recomendada de chope para o seu evento, escolha seus estilos preferidos e receba sua cotação em minutos.
           </p>
         </div>
 
@@ -172,7 +172,7 @@ export const Step0Entry: React.FC<Step0EntryProps> = ({
               </div>
               <div className="text-xs font-bold text-stone-200">Sem Burocracia</div>
               <div className="text-[11px] text-stone-400 mt-1 leading-normal">
-                Uma ferramenta prática e divertida para você garantir o dimensionamento correto da quantidade de chope pro seu evento.
+                Uma ferramenta prática e intuitiva para ajudar no dimensionamento do seu evento sem complicação.
               </div>
             </div>
           </div>
@@ -206,7 +206,7 @@ export const Step0Entry: React.FC<Step0EntryProps> = ({
                 3
               </span>
               <p className="text-stone-300">
-                <strong className="text-white">Cotação na hora:</strong> Gere sua cotação em poucos minutos e encaminhe sua solicitação para o time Albanos no WhatsApp.
+                <strong className="text-white">Cotação na hora:</strong> Gere sua cotação em poucos minutos e siga o atendimento com o Time Comercial Albanos no WhatsApp.
               </p>
             </div>
           </div>

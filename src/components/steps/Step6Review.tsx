@@ -133,10 +133,10 @@ export const Step6Review: React.FC<Step6ReviewProps> = ({
                 Equipamentos Solicitados
               </span>
               <div className="text-stone-300">
-                Chopeira elétrica: <strong>{state.precisa_chopeira === true ? 'Solicitada (disponibilidade a confirmar)' : state.precisa_chopeira === false ? 'Não (equipamento próprio)' : 'Não informado'}</strong>
+                Chopeira elétrica: <strong>{state.precisa_chopeira === true ? 'Solicitada' : state.precisa_chopeira === false ? 'Não (equipamento próprio)' : 'Não informado'}</strong>
               </div>
               <div className="text-stone-400 mt-0.5">
-                Cilindro de CO2: <strong>{state.precisa_gas === true ? 'Solicitado (disponibilidade a confirmar)' : state.precisa_gas === false ? 'Não (gás próprio)' : 'Não informado'}</strong>
+                Cilindro de CO2: <strong>{state.precisa_gas === true ? 'Solicitado' : state.precisa_gas === false ? 'Não (gás próprio)' : 'Não informado'}</strong>
               </div>
             </div>
           </div>

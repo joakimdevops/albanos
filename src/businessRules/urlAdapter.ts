@@ -1,7 +1,11 @@
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
- * Albano's Chopp Calculator — Adaptador de URL (Iara -> Calculator) V1.1
+ * Albano's Chopp Calculator — Adaptador de URL (Iara -> Calculator) V1.2
+ *
+ * Princípio:
+ * O deep-link pode pré-preencher dados declarados, mas não pode burlar regras, gates ou
+ * atos explícitos de deliberação do usuário.
  */
 
 import {
@@ -12,15 +16,30 @@ import {
   OutrasBebidas,
 } from '../types';
 import { CONTRACT_VERSION, ESTADO_INICIAL } from './domainConfig';
-import { aplicarMudancaEstado, calcularPrioridade } from './dependenciesEngine';
+import { calcularPrioridade } from './dependenciesEngine';
 import { calcularDimensionamento } from './dimensioningEngine';
 import { calcularFrete } from './freightEngine';
-import { somarBarrisMix, validarInvarianteMix } from './mixEngine';
+import { validarInvarianteMix } from './mixEngine';
 import {
   validarDataLogistica,
-  validarDataRetiradaFabrica,
   validarHorarioLogistica,
 } from './logisticsEngine';
+import {
+  parsearInteiroEstrito,
+  validarBarrisTotal,
+  validarDataEvento,
+  validarDuracaoHoras,
+  validarEmailLead,
+  validarHorarioValido,
+  validarInteiroNaoNegativoEstrito,
+  validarInteiroPositivoEstrito,
+  validarNomeLead,
+  validarParcelasCartao,
+  validarQtdAdultos,
+  validarQtdPessoas,
+  validarTelefoneLead,
+} from './validators';
+import { determinarEtapaPorGates } from './gatesEngine';
 
 export interface URLImportResultado {
   sucesso: boolean;
@@ -46,7 +65,7 @@ export function criarEstadoInicial(): CalculatorState {
 
 /**
  * Faz a importação estrita e segura de parâmetros de busca (query string) da URL.
- * Rejeita explicitamente CPF, nascimento, PII, valores derivados e não-allowlisted.
+ * Rejeita explicitamente CPF, nascimento, PII, valores derivados, aceite e confirmação de revisão.
  */
 export function importarParametrosURL(
   searchParams: URLSearchParams,
@@ -57,7 +76,7 @@ export function importarParametrosURL(
   let parametrosIgnorados = 0;
   const detalhes: string[] = [];
 
-  // 1. Origem
+  // 1. Origem permitida
   const src = searchParams.get('src');
   if (src === 'iara') {
     estado.origem = 'iara';
@@ -67,61 +86,110 @@ export function importarParametrosURL(
     parametrosValidos++;
   }
 
-  // 2. Parâmetros explicitamente proibidos
-  const camposProibidos = ['cpf', 'data_nascimento', 'nascimento', 'litros_estimados', 'total', 'subtotal', 'frete', 'aceite_orcamento'];
+  // 2. Parâmetros explicitamente proibidos (PII, derivados, atos explícitos de revisão e aceite)
+  const camposProibidos = [
+    'cpf',
+    'data_nascimento',
+    'nascimento',
+    'litros_estimados',
+    'total',
+    'subtotal',
+    'frete',
+    'aceite_orcamento',
+    'revisao_pre_orcamento_confirmada',
+  ];
   for (const proibido of camposProibidos) {
     if (searchParams.has(proibido)) {
       parametrosIgnorados++;
-      detalhes.push(`Parâmetro derivado/proibido '${proibido}' rejeitado por segurança.`);
+      detalhes.push(`Parâmetro proibido/derivado '${proibido}' rejeitado por segurança e governança.`);
     }
   }
 
-  // 3. Data do evento
+  // 6.2.6 & 6.2.7: Revisão e Aceite NUNCA podem ser fabricados por URL
+  estado.revisao_pre_orcamento_confirmada = false;
+  estado.aceite_orcamento = 'PENDENTE';
+
+  // 3. Data do evento (deve ser data real válida e não no passado)
   const dataEvento = searchParams.get('data_evento');
-  if (dataEvento && /^\d{4}-\d{2}-\d{2}$/.test(dataEvento)) {
-    estado.data_evento = dataEvento;
-    const { prioridade, diasAteEvento } = calcularPrioridade(dataEvento);
-    estado.prioridade_atendimento = prioridade;
-    estado.dias_ate_evento = diasAteEvento;
-    parametrosValidos++;
+  if (dataEvento !== null) {
+    if (validarDataEvento(dataEvento)) {
+      estado.data_evento = dataEvento.trim();
+      const { prioridade, diasAteEvento } = calcularPrioridade(estado.data_evento);
+      estado.prioridade_atendimento = prioridade;
+      estado.dias_ate_evento = diasAteEvento;
+      parametrosValidos++;
+    } else {
+      parametrosIgnorados++;
+      detalhes.push('Data do evento inválida ou no passado ignorada.');
+    }
   }
 
-  // 3.1 Horário de início do evento (HH:mm)
+  // 3.1 Horário de início do evento (formato canônico HH:mm real)
   const horarioInicio = searchParams.get('horario_inicio_evento');
-  if (horarioInicio && /^\d{1,2}:\d{2}$/.test(horarioInicio)) {
-    estado.horario_inicio_evento = horarioInicio;
-    parametrosValidos++;
+  if (horarioInicio !== null) {
+    if (validarHorarioValido(horarioInicio)) {
+      estado.horario_inicio_evento = horarioInicio.trim();
+      parametrosValidos++;
+    } else {
+      parametrosIgnorados++;
+      detalhes.push('Horário de início inválido ignorado (esperado formato HH:mm válido).');
+    }
   }
 
   // 4. Cidade
   const cidade = searchParams.get('cidade');
-  if (cidade && cidade.trim().length > 0 && cidade.length <= 100) {
-    estado.cidade = cidade.trim();
-    estado.endereco.cidade = cidade.trim();
-    estado.frete = calcularFrete(estado.modalidade_logistica, estado.cidade);
-    parametrosValidos++;
+  if (cidade !== null) {
+    const limpo = cidade.trim();
+    if (limpo.length >= 2 && limpo.length <= 100) {
+      estado.cidade = limpo;
+      estado.endereco.cidade = limpo;
+      estado.frete = calcularFrete(estado.modalidade_logistica, estado.cidade);
+      parametrosValidos++;
+    } else {
+      parametrosIgnorados++;
+      detalhes.push('Cidade informada é inválida.');
+    }
   }
 
-  // 5. Total de pessoas e adultos
+  // 5. Total de pessoas e adultos (inteiros estritos, sem coerção silenciosa)
   const qtdPessoas = searchParams.get('qtd_pessoas');
-  if (qtdPessoas && !isNaN(Number(qtdPessoas)) && Number(qtdPessoas) >= 0) {
-    estado.qtd_pessoas = Math.floor(Number(qtdPessoas));
-    parametrosValidos++;
+  if (qtdPessoas !== null) {
+    if (validarInteiroPositivoEstrito(qtdPessoas)) {
+      estado.qtd_pessoas = parsearInteiroEstrito(qtdPessoas)!;
+      parametrosValidos++;
+    } else {
+      parametrosIgnorados++;
+      detalhes.push('Quantidade total de pessoas deve ser um inteiro >= 1.');
+    }
   }
 
   const qtdAdultos = searchParams.get('qtd_adultos');
-  if (qtdAdultos && !isNaN(Number(qtdAdultos)) && Number(qtdAdultos) >= 0) {
-    estado.qtd_adultos = Math.floor(Number(qtdAdultos));
-    parametrosValidos++;
+  if (qtdAdultos !== null) {
+    if (validarQtdAdultos(qtdAdultos)) {
+      estado.qtd_adultos = parsearInteiroEstrito(qtdAdultos)!;
+      parametrosValidos++;
+    } else {
+      parametrosIgnorados++;
+      detalhes.push('Quantidade de adultos deve ser um inteiro >= 1.');
+    }
   }
 
-  // 6. Duração em horas (inteiro de 1 a 12)
+  // Se ambos foram informados, garante que total de pessoas >= adultos
+  if (estado.qtd_pessoas && estado.qtd_adultos && estado.qtd_pessoas < estado.qtd_adultos) {
+    estado.qtd_pessoas = undefined;
+    parametrosIgnorados++;
+    detalhes.push('Quantidade total de pessoas menor que adultos foi desconsiderada.');
+  }
+
+  // 6. Duração em horas (inteiro estrito de 1 a 12, sem arredondar ou truncar 4.5/4.9)
   const duracao = searchParams.get('duracao_horas');
-  if (duracao && !isNaN(Number(duracao))) {
-    const dInt = Math.round(Number(duracao));
-    if (dInt >= 1 && dInt <= 12) {
-      estado.duracao_horas = dInt;
+  if (duracao !== null) {
+    if (validarDuracaoHoras(duracao)) {
+      estado.duracao_horas = parsearInteiroEstrito(duracao)!;
       parametrosValidos++;
+    } else {
+      parametrosIgnorados++;
+      detalhes.push('Duração deve ser um número inteiro de 1 a 12 horas.');
     }
   }
 
@@ -131,6 +199,12 @@ export function importarParametrosURL(
     searchParams.get('evento_longo_ou_multiplos_dias');
   if (eventoLongo === 'true' || eventoLongo === 'SIM' || eventoLongo === '1') {
     estado.evento_longo_ou_multiplos_dias = true;
+    estado.duracao_horas = undefined; // Exclusividade mútua: remove duração normal
+    estado.litros_estimados = undefined;
+    estado.fator_consumo_usado = undefined;
+    estado.barris_total_escolhidos = undefined;
+    estado.cenario_quantidade = undefined;
+    estado.orcamento = undefined;
     parametrosValidos++;
   }
 
@@ -139,10 +213,13 @@ export function importarParametrosURL(
   if (outrasBebidas === 'SIM' || outrasBebidas === 'NAO') {
     estado.outras_bebidas_alcoolicas = outrasBebidas as OutrasBebidas;
     parametrosValidos++;
+  } else if (outrasBebidas !== null) {
+    parametrosIgnorados++;
+    detalhes.push("Opção de outras bebidas alcoólicas deve ser 'SIM' ou 'NAO'.");
   }
 
-  // Se tiver adultos, duração e outras bebidas -> recalcula litros_estimados localmente!
-  if (estado.qtd_adultos && estado.duracao_horas && estado.outras_bebidas_alcoolicas) {
+  // Se tiver adultos, duração e outras bebidas -> recalcula litros_estimados localmente (apenas para evento normal!)
+  if (!estado.evento_longo_ou_multiplos_dias && estado.qtd_adultos && estado.duracao_horas && estado.outras_bebidas_alcoolicas) {
     try {
       const dim = calcularDimensionamento(
         estado.qtd_adultos,
@@ -152,15 +229,20 @@ export function importarParametrosURL(
       estado.litros_estimados = dim.litrosEstimados;
       estado.fator_consumo_usado = dim.fatorConsumo;
     } catch {
-      // Ignora erro de dimensionamento silenciosamente
+      // Ignora erro silenciosamente
     }
   }
 
-  // 8. Barris total escolhidos
+  // 8. Barris total escolhidos (inteiro estrito >= 1)
   const barrisTotal = searchParams.get('barris_total_escolhidos');
-  if (barrisTotal && !isNaN(Number(barrisTotal)) && Number(barrisTotal) > 0) {
-    estado.barris_total_escolhidos = Math.floor(Number(barrisTotal));
-    parametrosValidos++;
+  if (barrisTotal !== null) {
+    if (validarBarrisTotal(barrisTotal)) {
+      estado.barris_total_escolhidos = parsearInteiroEstrito(barrisTotal)!;
+      parametrosValidos++;
+    } else {
+      parametrosIgnorados++;
+      detalhes.push('Quantidade de barris deve ser um inteiro >= 1.');
+    }
   }
 
   // 9. Cenário de quantidade
@@ -168,9 +250,12 @@ export function importarParametrosURL(
   if (cenario === 'JUSTO' || cenario === 'ENXUTO' || cenario === 'ABUNDANTE') {
     estado.cenario_quantidade = cenario as CenarioQuantidade;
     parametrosValidos++;
+  } else if (cenario !== null) {
+    parametrosIgnorados++;
+    detalhes.push('Cenário de quantidade inválido.');
   }
 
-  // 10. Mix por estilo (só aceito se todos forem válidos e baterem com barrisTotal)
+  // 10. Mix por estilo (só aceito se todos forem inteiros estritos >= 0 e fecharem a invariante com barrisTotal)
   const pilsen = searchParams.get('barris_pilsen');
   const session = searchParams.get('barris_session_ipa');
   const amber = searchParams.get('barris_amber');
@@ -186,38 +271,69 @@ export function importarParametrosURL(
     american !== null ||
     pale !== null
   ) {
-    const novoMix = {
-      pilsen: pilsen ? Math.max(0, parseInt(pilsen, 10)) : 0,
-      session_ipa: session ? Math.max(0, parseInt(session, 10)) : 0,
-      amber: amber ? Math.max(0, parseInt(amber, 10)) : 0,
-      life_lager: life ? Math.max(0, parseInt(life, 10)) : 0,
-      american_ipa: american ? Math.max(0, parseInt(american, 10)) : 0,
-      pale_ale: pale ? Math.max(0, parseInt(pale, 10)) : 0,
+    const parseOuZeroEstrito = (val: string | null): number | null => {
+      if (val === null) return 0;
+      if (!validarInteiroNaoNegativoEstrito(val)) return null;
+      return parsearInteiroEstrito(val);
     };
 
-    if (estado.barris_total_escolhidos) {
-      const validacao = validarInvarianteMix(novoMix, estado.barris_total_escolhidos);
-      if (validacao.valido) {
-        estado.mix = novoMix;
-        parametrosValidos++;
-      } else {
-        parametrosIgnorados++;
-        detalhes.push('Mix recebido por URL não fecha com barris_total_escolhidos. Sugestão automática mantida.');
+    const p = parseOuZeroEstrito(pilsen);
+    const s = parseOuZeroEstrito(session);
+    const a = parseOuZeroEstrito(amber);
+    const l = parseOuZeroEstrito(life);
+    const am = parseOuZeroEstrito(american);
+    const pa = parseOuZeroEstrito(pale);
+
+    if (
+      p !== null &&
+      s !== null &&
+      a !== null &&
+      l !== null &&
+      am !== null &&
+      pa !== null
+    ) {
+      const novoMix = {
+        pilsen: p,
+        session_ipa: s,
+        amber: a,
+        life_lager: l,
+        american_ipa: am,
+        pale_ale: pa,
+      };
+
+      if (estado.barris_total_escolhidos) {
+        const validacao = validarInvarianteMix(novoMix, estado.barris_total_escolhidos);
+        if (validacao.valido) {
+          estado.mix = novoMix;
+          parametrosValidos++;
+        } else {
+          parametrosIgnorados++;
+          detalhes.push('Mix recebido por URL não fecha com barris_total_escolhidos.');
+        }
       }
+    } else {
+      parametrosIgnorados++;
+      detalhes.push('Valores de barris no mix devem ser números inteiros não-negativos estritos.');
     }
   }
 
-  // 11. Equipamentos
+  // 11. Equipamentos (SIM | NAO | true | false)
   const chopeira = searchParams.get('precisa_chopeira');
   if (chopeira === 'SIM' || chopeira === 'NAO' || chopeira === 'true' || chopeira === 'false') {
     estado.precisa_chopeira = chopeira === 'SIM' || chopeira === 'true';
     parametrosValidos++;
+  } else if (chopeira !== null) {
+    parametrosIgnorados++;
+    detalhes.push('Opção de chopeira inválida ignorada.');
   }
 
   const gas = searchParams.get('precisa_gas');
   if (gas === 'SIM' || gas === 'NAO' || gas === 'true' || gas === 'false') {
     estado.precisa_gas = gas === 'SIM' || gas === 'true';
     parametrosValidos++;
+  } else if (gas !== null) {
+    parametrosIgnorados++;
+    detalhes.push('Opção de gás CO2 inválida ignorada.');
   }
 
   // 12. Modalidade logística
@@ -226,6 +342,9 @@ export function importarParametrosURL(
     estado.modalidade_logistica = modalidade as ModalidadeLogistica;
     estado.frete = calcularFrete(estado.modalidade_logistica, estado.cidade);
     parametrosValidos++;
+  } else if (modalidade !== null) {
+    parametrosIgnorados++;
+    detalhes.push('Modalidade logística inválida ignorada.');
   }
 
   // 12.1 Dados de Endereço (quando entrega)
@@ -254,166 +373,135 @@ export function importarParametrosURL(
     parametrosValidos++;
   }
 
-  // 13. Data/hora de entrega (quando entrega)
+  // 13. Data e hora de entrega (validação de domínio estrita)
   const dataEntrega = searchParams.get('data_entrega');
-  if (dataEntrega && /^\d{4}-\d{2}-\d{2}$/.test(dataEntrega)) {
-    estado.data_entrega = dataEntrega;
-    parametrosValidos++;
+  if (dataEntrega !== null) {
+    const valData = validarDataLogistica(dataEntrega, estado.data_evento, undefined, 'entrega');
+    if (valData.valido) {
+      estado.data_entrega = dataEntrega.trim();
+      parametrosValidos++;
+    } else {
+      parametrosIgnorados++;
+      detalhes.push(`Data de entrega inválida na URL: ${valData.motivo}`);
+    }
   }
+
   const horaEntrega = searchParams.get('hora_entrega');
-  if (horaEntrega) {
-    estado.hora_entrega = horaEntrega.slice(0, 10).trim();
-    parametrosValidos++;
+  if (horaEntrega !== null) {
+    const valHora = validarHorarioLogistica(
+      horaEntrega,
+      estado.data_entrega,
+      estado.data_evento,
+      estado.horario_inicio_evento,
+      'entrega'
+    );
+    if (valHora.valido) {
+      estado.hora_entrega = horaEntrega.trim();
+      parametrosValidos++;
+    } else {
+      parametrosIgnorados++;
+      detalhes.push(`Horário de entrega inválido na URL: ${valHora.motivo}`);
+    }
   }
 
-  // 14. Data/hora de retirada (quando retirada)
+  // 14. Data e hora de retirada na fábrica (validação de domínio estrita)
   const dataRetirada = searchParams.get('data_retirada');
-  if (dataRetirada && /^\d{4}-\d{2}-\d{2}$/.test(dataRetirada)) {
-    estado.data_retirada = dataRetirada;
-    parametrosValidos++;
-  }
-  const horaRetirada = searchParams.get('hora_retirada');
-  if (horaRetirada) {
-    estado.hora_retirada = horaRetirada.slice(0, 10).trim();
-    parametrosValidos++;
+  if (dataRetirada !== null) {
+    const valData = validarDataLogistica(dataRetirada, estado.data_evento, undefined, 'retirada');
+    if (valData.valido) {
+      estado.data_retirada = dataRetirada.trim();
+      parametrosValidos++;
+    } else {
+      parametrosIgnorados++;
+      detalhes.push(`Data de retirada inválida na URL: ${valData.motivo}`);
+    }
   }
 
-  // 15. Forma de pagamento (somente PIX ou CARTAO)
+  const horaRetirada = searchParams.get('hora_retirada');
+  if (horaRetirada !== null) {
+    const valHora = validarHorarioLogistica(
+      horaRetirada,
+      estado.data_retirada,
+      estado.data_evento,
+      estado.horario_inicio_evento,
+      'retirada'
+    );
+    if (valHora.valido) {
+      estado.hora_retirada = horaRetirada.trim();
+      parametrosValidos++;
+    } else {
+      parametrosIgnorados++;
+      detalhes.push(`Horário de retirada inválido na URL: ${valHora.motivo}`);
+    }
+  }
+
+  // 15. Forma de pagamento (somente PIX ou CARTAO, sem DINHEIRO)
   const formaPagamento = searchParams.get('forma_pagamento');
   if (formaPagamento === 'PIX' || formaPagamento === 'CARTAO') {
     estado.forma_pagamento = formaPagamento as FormaPagamento;
     parametrosValidos++;
+  } else if (formaPagamento !== null) {
+    parametrosIgnorados++;
+    detalhes.push('Forma de pagamento não suportada ignorada.');
   }
 
+  // 15.1 Parcelas cartão (inteiro estrito 1..12, sem coerção float/floor)
   const parcelas = searchParams.get('parcelas_cartao');
-  if (parcelas && !isNaN(Number(parcelas))) {
-    const p = Math.floor(Number(parcelas));
-    if (p >= 1 && p <= 12) {
-      estado.parcelas_cartao = p;
+  if (parcelas !== null) {
+    if (validarParcelasCartao(parcelas)) {
+      estado.parcelas_cartao = parsearInteiroEstrito(parcelas)!;
       parametrosValidos++;
+    } else {
+      parametrosIgnorados++;
+      detalhes.push('Parcelas do cartão deve ser um número inteiro de 1 a 12.');
     }
   }
 
-  // 16. Contato (Identificação do Lead)
+  // 16. Contato (Identificação do Lead: mesmas regras canônicas da UI)
   const nomeContato = searchParams.get('nome_completo') || searchParams.get('nome');
-  if (nomeContato && nomeContato.trim().length >= 2) {
-    estado.contato = {
-      ...estado.contato,
-      nome_completo: nomeContato.trim(),
-    };
-    parametrosValidos++;
+  if (nomeContato !== null) {
+    if (validarNomeLead(nomeContato)) {
+      estado.contato = {
+        ...estado.contato,
+        nome_completo: nomeContato.trim(),
+      };
+      parametrosValidos++;
+    } else {
+      parametrosIgnorados++;
+      detalhes.push('Nome do responsável inválido (mínimo de 3 caracteres válidos).');
+    }
   }
 
   const telContato = searchParams.get('telefone_responsavel') || searchParams.get('telefone');
-  if (telContato && telContato.replace(/\D/g, '').length >= 10) {
-    estado.contato = {
-      ...estado.contato,
-      telefone_responsavel: telContato.trim(),
-    };
-    parametrosValidos++;
+  if (telContato !== null) {
+    if (validarTelefoneLead(telContato)) {
+      estado.contato = {
+        ...estado.contato,
+        telefone_responsavel: telContato.trim(),
+      };
+      parametrosValidos++;
+    } else {
+      parametrosIgnorados++;
+      detalhes.push('Telefone inválido (deve conter 10 ou 11 dígitos com DDD).');
+    }
   }
 
   const emailContato = searchParams.get('email');
-  if (emailContato && emailContato.trim().length > 0) {
-    if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailContato.trim())) {
+  if (emailContato !== null) {
+    if (validarEmailLead(emailContato) && emailContato.trim().length > 0) {
       estado.contato = {
         ...estado.contato,
         email: emailContato.trim(),
       };
       parametrosValidos++;
-    } else {
+    } else if (emailContato.trim().length > 0) {
       parametrosIgnorados++;
       detalhes.push('E-mail em formato inválido ignorado na URL.');
     }
   }
 
-  // 17. Flag de Revisão Confirmada via URL (se vier de deep-link avançado)
-  const revisaoConf = searchParams.get('revisao_pre_orcamento_confirmada');
-  if (revisaoConf === 'true' || revisaoConf === 'SIM' || revisaoConf === '1') {
-    estado.revisao_pre_orcamento_confirmada = true;
-    parametrosValidos++;
-  }
-
-  // 18. Posicionar usuário no primeiro ponto que ainda exige decisão humana
-  // Mapeamento idêntico às etapas do App.tsx:
-  // 0: Início
-  // 1: Dados do Evento (se faltar data_evento, horario_inicio_evento, qtd_adultos, duracao_horas, outras_bebidas_alcoolicas ou cidade)
-  // 2: Dimensionamento & Cenários (se faltar escolher barris_total_escolhidos)
-  // 3: Portfólio & Mix de Chope (se o mix não fechar com barris_total_escolhidos)
-  // 4: Equipamentos (se faltar resposta explícita para precisa_chopeira ou precisa_gas)
-  // 5: Logística & Frete (se modalidade_logistica for A_DEFINIR, ou se entrega faltar endereço/data/hora válidas, ou se retirada faltar data/hora válidas)
-  // 6: Revisão Pré-Orçamento (se todos os dados anteriores já estiverem satisfeitos e revisão ainda não foi confirmada)
-  // 7: Identificação do Lead (se revisão estiver confirmada mas faltar nome_completo ou telefone_responsavel)
-  // 8: Orçamento & Pagamento (se lead já identificado e orçamento pronto para aceite e fechamento)
-  let primeiraEtapaPendente = 1; // Padrão seguro ao chegar via URL com parâmetros: Etapa 1 (Evento)
-
-  if (
-    !estado.data_evento ||
-    !estado.horario_inicio_evento ||
-    !estado.qtd_adultos ||
-    (!estado.duracao_horas && !estado.evento_longo_ou_multiplos_dias) ||
-    !estado.outras_bebidas_alcoolicas ||
-    !estado.cidade
-  ) {
-    primeiraEtapaPendente = 1;
-  } else if (!estado.barris_total_escolhidos) {
-    primeiraEtapaPendente = 2;
-  } else if (!validarInvarianteMix(estado.mix, estado.barris_total_escolhidos).valido) {
-    primeiraEtapaPendente = 3;
-  } else if (estado.precisa_chopeira === undefined || estado.precisa_gas === undefined) {
-    primeiraEtapaPendente = 4;
-  } else if (
-    !estado.modalidade_logistica ||
-    estado.modalidade_logistica === 'A_DEFINIR' ||
-    (estado.modalidade_logistica === 'ENTREGA' &&
-      (!estado.endereco ||
-        !estado.endereco.logradouro ||
-        !estado.endereco.logradouro.trim() ||
-        !estado.endereco.numero ||
-        !estado.endereco.numero.trim() ||
-        !estado.endereco.bairro ||
-        !estado.endereco.bairro.trim() ||
-        !estado.data_entrega ||
-        !estado.data_entrega.trim() ||
-        !validarDataLogistica(estado.data_entrega, estado.data_evento, undefined, 'entrega').valido ||
-        !estado.hora_entrega ||
-        !estado.hora_entrega.trim() ||
-        !validarHorarioLogistica(
-          estado.hora_entrega,
-          estado.data_entrega,
-          estado.data_evento,
-          estado.horario_inicio_evento,
-          'entrega'
-        ).valido)) ||
-    (estado.modalidade_logistica === 'RETIRADA_FABRICA' &&
-      (!estado.data_retirada ||
-        !estado.data_retirada.trim() ||
-        !validarDataLogistica(estado.data_retirada, estado.data_evento, undefined, 'retirada').valido ||
-        !estado.hora_retirada ||
-        !estado.hora_retirada.trim() ||
-        !validarHorarioLogistica(
-          estado.hora_retirada,
-          estado.data_retirada,
-          estado.data_evento,
-          estado.horario_inicio_evento,
-          'retirada'
-        ).valido))
-  ) {
-    primeiraEtapaPendente = 5;
-  } else if (!estado.revisao_pre_orcamento_confirmada) {
-    primeiraEtapaPendente = 6; // Todos os dados necessários preenchidos -> Revisão pré-orçamento
-  } else if (
-    !estado.contato ||
-    !estado.contato.nome_completo ||
-    !estado.contato.nome_completo.trim() ||
-    !estado.contato.telefone_responsavel ||
-    !estado.contato.telefone_responsavel.trim()
-  ) {
-    primeiraEtapaPendente = 7; // Identificação do Lead (Nome e Telefone)
-  } else {
-    primeiraEtapaPendente = 8; // Orçamento & Condições de Pagamento
-  }
-
+  // 17. Determinação canônica e estrita da primeira etapa pendente (Gates 1 a 8)
+  const primeiraEtapaPendente = determinarEtapaPorGates(estado);
   estado.etapaAtual = primeiraEtapaPendente;
 
   return {
@@ -444,3 +532,5 @@ export function aplicarParametrosUrlNoEstado(
   const resultado = importarParametrosURL(params, estadoBase);
   return resultado.novoEstado;
 }
+
+export { determinarEtapaPorGates };

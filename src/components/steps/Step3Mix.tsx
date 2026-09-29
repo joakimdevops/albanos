@@ -35,7 +35,7 @@ export const Step3Mix: React.FC<Step3MixProps> = ({
   onNext,
   onBack,
 }) => {
-  const barrisTotal = state.barris_total_escolhidos || 3;
+  const barrisTotal = state.barris_total_escolhidos || 0;
   const mixAtual = state.mix;
 
   // Garante que o mix exista na inicialização com todos os estilos zerados

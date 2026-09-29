@@ -9,6 +9,7 @@ import { CalculatorState } from './types';
 import { ESTADO_INICIAL } from './businessRules/domainConfig';
 import { aplicarMudancaEstado } from './businessRules/dependenciesEngine';
 import { parsearParametrosUrl, importarParametrosURL } from './businessRules/urlAdapter';
+import { determinarEtapaPorGates } from './businessRules/gatesEngine';
 
 // Componentes da Interface
 import { HeaderNav } from './components/HeaderNav';
@@ -53,7 +54,9 @@ export default function App() {
   const sessaoInicial = useMemo(() => carregarSessaoDoLocalStorage(), []);
 
   const [etapaAtual, setEtapaAtual] = useState<number>(() => {
-    return sessaoInicial?.etapaAtual ?? 0;
+    if (!sessaoInicial || sessaoInicial.etapaAtual === 0) return 0;
+    const maxPelosGates = determinarEtapaPorGates(sessaoInicial.state);
+    return Math.min(sessaoInicial.etapaAtual, maxPelosGates);
   });
   const [state, setState] = useState<CalculatorState>(() => {
     return sessaoInicial?.state ?? ESTADO_INICIAL;
@@ -107,7 +110,7 @@ export default function App() {
 
   // Navegação
   const handleNext = () => {
-    setEtapaAtual((prev) => Math.min(9, prev + 1));
+    setEtapaAtual((prev) => Math.min(8, prev + 1));
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -117,7 +120,9 @@ export default function App() {
   };
 
   const handleGoToStep = (etapa: number) => {
-    setEtapaAtual(etapa);
+    const maxPermitido = determinarEtapaPorGates(state);
+    const destinoSeguro = Math.min(etapa, maxPermitido);
+    setEtapaAtual(destinoSeguro);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
